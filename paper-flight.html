@@ -1,0 +1,2736 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Paper Flight</title>
+<meta name="description" content="Fold a sheet of A4 into a paper airplane in 3D: drag corners, crease, fold and open the wings.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --mat: #B9CDBF;
+  --grid-minor: rgba(24, 62, 44, .13);
+  --grid-major: rgba(24, 62, 44, .25);
+  --paper: #F6F4EC;
+  --paper-back: #7DB1CD;
+  --fold: #D4306B;
+  --crease: #6B3FE0;
+  --ink: #183E2C;
+  --ink-soft: rgba(24, 62, 44, .68);
+  --surface: rgba(250, 249, 244, .92);
+  --surface-solid: #FAF9F4;
+  --line: rgba(24, 62, 44, .16);
+  --shadow: 0 1px 2px rgba(24, 62, 44, .10), 0 8px 24px -6px rgba(24, 62, 44, .22);
+  --danger: #B3261E;
+  --focus: #6B3FE0;
+  --radius: 14px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --mat: #1E2A24; --grid-minor: rgba(185, 205, 191, .08); --grid-major: rgba(185, 205, 191, .17);
+    --paper: #ECE9DE; --paper-back: #6A9FBD; --fold: #F0588F; --crease: #A487FF;
+    --ink: #E3ECE6; --ink-soft: rgba(227, 236, 230, .7); --surface: rgba(28, 38, 33, .92); --surface-solid: #1C2621;
+    --line: rgba(227, 236, 230, .14); --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 28px -6px rgba(0, 0, 0, .55);
+    --danger: #FF8A80; --focus: #A487FF; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --mat: #1E2A24; --grid-minor: rgba(185, 205, 191, .08); --grid-major: rgba(185, 205, 191, .17);
+  --paper: #ECE9DE; --paper-back: #6A9FBD; --fold: #F0588F; --crease: #A487FF;
+  --ink: #E3ECE6; --ink-soft: rgba(227, 236, 230, .7); --surface: rgba(28, 38, 33, .92); --surface-solid: #1C2621;
+  --line: rgba(227, 236, 230, .14); --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 28px -6px rgba(0, 0, 0, .55);
+  --danger: #FF8A80; --focus: #A487FF; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--mat); color: var(--ink);
+  font-family: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif; font-size: 15px; line-height: 1.4;
+  overflow: hidden; -webkit-tap-highlight-color: transparent;
+}
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2.5px solid var(--focus); outline-offset: 2px; border-radius: 8px; }
+#app { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr auto; }
+
+/* top bar */
+.topbar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top)); z-index: 5; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; letter-spacing: -.01em; white-space: nowrap; }
+.brand svg { width: 26px; height: 26px; }
+.tabs { display: flex; background: var(--surface); border-radius: 999px; padding: 3px; box-shadow: var(--shadow); }
+.tabs button { border: 0; background: transparent; padding: 6px 16px; border-radius: 999px; font-weight: 600; }
+.tabs button[aria-selected="true"] { background: var(--ink); color: var(--surface-solid); }
+.top-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.chip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 13px; font-weight: 500; box-shadow: var(--shadow); white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--surface-solid); }
+.chip svg { width: 16px; height: 16px; flex: none; }
+.icon-only { padding: 6px 9px; }
+
+/* stage */
+#stage { position: relative; overflow: hidden; min-height: 0; }
+#gl, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#overlay { touch-action: none; cursor: default; }
+#overlay:focus-visible { outline: 3px solid var(--focus); outline-offset: -6px; border-radius: 16px; }
+.card { position: absolute; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.card h2 { font-size: 16px; margin: 0 0 4px; letter-spacing: -.01em; }
+.card p { margin: 0; color: var(--ink-soft); }
+
+#guide { left: 16px; top: 8px; width: min(360px, calc(100% - 32px)); padding: 14px 16px 12px; z-index: 4; }
+#guide .eyebrow { font-size: 12.5px; font-weight: 600; color: var(--fold); margin-bottom: 2px; }
+#guide .dots { display: flex; gap: 5px; margin: 10px 0 8px; }
+#guide .dots i { width: 22px; height: 5px; border-radius: 3px; background: var(--line); }
+#guide .dots i.done { background: var(--ink); }
+#guide .dots i.now { background: var(--fold); }
+#guide .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+#guide .nudge { margin-top: 8px; color: var(--fold); font-weight: 500; }
+.linkish { background: none; border: 0; padding: 4px 2px; color: var(--ink-soft); text-decoration: underline; text-underline-offset: 3px; }
+.btn { border: 0; background: var(--ink); color: var(--surface-solid); padding: 8px 14px; border-radius: 10px; font-weight: 600; }
+.btn.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.btn.accent { background: var(--fold); color: #fff; }
+
+#look { right: 16px; top: 8px; width: min(380px, calc(100% - 32px)); padding: 14px 16px; z-index: 4; }
+#look .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+#look figure { margin: 0; text-align: center; }
+#look figcaption { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); margin-top: 2px; }
+#look svg { width: 100%; height: auto; display: block; }
+
+#shape-panel { right: 16px; top: 8px; bottom: 16px; width: min(330px, calc(100% - 32px)); padding: 16px; overflow: auto; z-index: 4; }
+#shape-panel .field { margin: 14px 0; }
+#shape-panel label { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; gap: 8px; }
+#shape-panel label output { font-weight: 500; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+#shape-panel .hint { font-size: 13px; color: var(--ink-soft); margin: 2px 0 0; }
+#shape-panel select { width: 100%; margin-top: 6px; padding: 7px 9px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface-solid); }
+#shape-panel .check { display: flex; gap: 8px; align-items: center; font-weight: 500; justify-content: flex-start; }
+.stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 14px 0 4px; }
+.stat { background: var(--surface-solid); border: 1px solid var(--line); border-radius: 10px; padding: 7px 8px; min-width: 0; }
+.stat span { display: block; line-height: 1.2; }
+[hidden] { display: none !important; }
+.stat b { display: block; font-size: 16px; letter-spacing: -.01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stat span { font-size: 12px; color: var(--ink-soft); }
+.warn { margin-top: 10px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--fold) 14%, transparent); color: var(--ink); font-size: 13.5px; }
+input[type="range"] { width: 100%; accent-color: var(--fold); margin: 6px 0 0; height: 28px; }
+.seg-mini { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; margin-top: 6px; }
+.seg-mini button { border: 0; background: transparent; padding: 5px 12px; font-weight: 500; }
+.seg-mini button[aria-pressed="true"] { background: var(--ink); color: var(--surface-solid); }
+
+/* show me */
+#showme { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; background: rgba(24, 62, 44, .28); padding: 16px; }
+#showme[hidden] { display: none; }
+#showme .sheet { background: var(--surface-solid); border-radius: 18px; box-shadow: var(--shadow); width: min(980px, 100%); max-height: 100%; overflow: auto; padding: 18px 20px 20px; }
+#showme header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#showme h2 { margin: 0; font-size: 19px; margin-right: auto; }
+#showme .steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 14px; }
+#showme figure { margin: 0; background: var(--mat); border-radius: 12px; padding: 8px; }
+#showme figure svg { width: 100%; height: auto; display: block; }
+#showme figcaption { font-size: 13px; padding: 4px 2px 0; }
+#showme figcaption b { color: var(--fold); margin-right: 4px; }
+
+/* dock */
+.dock { padding: 8px 16px 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); z-index: 5; display: grid; gap: 8px; justify-items: center; }
+#status { margin: 0; background: var(--surface); padding: 8px 14px; border-radius: 999px; box-shadow: var(--shadow); font-weight: 500; max-width: 100%; text-align: center; min-height: 38px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
+#status.error { color: var(--danger); }
+#status .act { border: 0; background: var(--fold); color: #fff; border-radius: 999px; padding: 4px 11px; font-weight: 600; font-size: 13.5px; }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.seg { display: inline-flex; background: var(--surface); border-radius: 12px; padding: 3px; box-shadow: var(--shadow); }
+.seg button { border: 0; background: transparent; padding: 7px 14px; border-radius: 9px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.seg button[aria-checked="true"][data-mode="fold"] { background: var(--fold); color: #fff; }
+.seg button[aria-checked="true"][data-mode="crease"] { background: var(--crease); color: #fff; }
+.tool { border: 0; background: var(--surface); box-shadow: var(--shadow); border-radius: 12px; padding: 9px 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+.tool:disabled { opacity: .45; cursor: default; }
+.tool svg, .seg svg { width: 17px; height: 17px; }
+.budget { display: inline-flex; align-items: center; gap: 8px; background: var(--surface); box-shadow: var(--shadow); border-radius: 12px; padding: 8px 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.pips { display: inline-flex; gap: 3px; }
+.pips i { width: 6px; height: 14px; border-radius: 2px; background: var(--fold); }
+.pips i.used { background: var(--line); }
+.only-shape { display: none; }
+body.tab-shape .only-fold { display: none; }
+body.tab-shape .only-shape { display: inline-flex; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+#testout { position: fixed; inset: 60px 16px auto; z-index: 20; background: var(--surface-solid); border-radius: 12px; padding: 14px 18px; box-shadow: var(--shadow); font-size: 14px; max-height: 70vh; overflow: auto; }
+#testout .pass { color: #1E7B45; } #testout .fail { color: var(--danger); }
+
+@media (max-width: 720px) {
+  .topbar { flex-wrap: wrap; gap: 8px; padding: 8px 12px; }
+  .brand span { display: none; }
+  .top-actions { gap: 6px; }
+  .chip .lbl { display: none; }
+  .chip { padding: 6px 9px; }
+  #guide { left: 12px; right: 12px; width: auto; top: 6px; padding: 10px 12px; }
+  #guide p { font-size: 14px; }
+  #look { left: 12px; right: 12px; width: auto; top: auto; bottom: 8px; }
+  #shape-panel { left: 0; right: 0; bottom: 0; top: auto; width: auto; max-height: 52%; border-radius: 18px 18px 0 0; }
+  .dock { padding: 6px 10px 10px; }
+  .tool .lbl { display: none; }
+  .tool { padding: 9px 11px; }
+  #status { font-size: 14px; border-radius: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body class="tab-fold">
+<div id="app">
+  <header class="topbar">
+    <div class="brand" aria-label="Paper flight">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 15 29 4 19 28l-4-9z" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.6" stroke-linejoin="round"/><path d="M15 19 29 4" stroke="var(--fold)" stroke-width="1.6"/></svg>
+      <span>Paper flight</span>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Step">
+      <button role="tab" id="tab-fold" aria-selected="true" aria-controls="stage">Fold</button>
+      <button role="tab" id="tab-shape" aria-selected="false" aria-controls="stage">Shape</button>
+    </nav>
+    <div class="top-actions">
+      <button class="chip" id="btn-guide" aria-pressed="true" title="Step-by-step guide">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4h9a3 3 0 0 1 3 3v9H6a3 3 0 0 1-3-3z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 8h6M6 11h4" stroke="currentColor" stroke-width="1.6"/></svg><span class="lbl">Guide</span></button>
+      <button class="chip" id="btn-look" aria-pressed="false" title="See the plane you're making">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 10 18 3l-5 14-3-5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span class="lbl">What's it look like?</span></button>
+      <button class="chip" id="btn-showme" title="Show me other planes">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="11" y="3" width="6" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="3" y="11" width="6" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="11" y="11" width="6" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="lbl">Show me</span></button>
+      <button class="chip icon-only" id="btn-theme" aria-label="Switch light or dark mode" title="Light or dark">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 3.5a6.5 6.5 0 0 1 0 13z" fill="currentColor"/></svg></button>
+    </div>
+  </header>
+
+  <main id="stage">
+    <canvas id="gl" aria-hidden="true"></canvas>
+    <canvas id="overlay" tabindex="0" role="application" aria-roledescription="folding table"
+      aria-label="Paper. Use left and right arrows to pick a corner, up and down to pick a fold line, Enter to fold, C for crease mode, F for fold mode, Z to undo."></canvas>
+
+    <aside id="guide" class="card" aria-live="polite">
+      <div class="eyebrow" id="guide-eyebrow">Build a classic dart · step 1 of 6</div>
+      <h2 id="guide-title">Crease it in half</h2>
+      <p id="guide-text"></p>
+      <div class="dots" id="guide-dots" aria-hidden="true"></div>
+      <p class="nudge" id="guide-nudge" hidden></p>
+      <div class="row">
+        <button class="linkish" id="guide-skip">Skip to free folding</button>
+        <span>
+          <button class="btn secondary" id="guide-back">Back</button>
+          <button class="btn" id="guide-next" hidden>Next</button>
+        </span>
+      </div>
+    </aside>
+
+    <aside id="look" class="card" hidden>
+      <h2>What you're making</h2>
+      <p id="look-text">Nose, wings and tail of a classic dart, seen from above.</p>
+      <div class="pair">
+        <figure><div id="look-goal"></div><figcaption>Goal: classic dart</figcaption></figure>
+        <figure><div id="look-yours"></div><figcaption id="look-yours-cap">Yours</figcaption></figure>
+      </div>
+    </aside>
+
+    <aside id="shape-panel" class="card" hidden aria-label="Shape the plane">
+      <h2>Open the plane</h2>
+      <p id="shape-intro">Set how far the wings open. The 3D view updates as you go.</p>
+      <div id="shape-body">
+        <div class="field">
+          <label for="spine-select">Spine <span class="sr-only">(main center fold)</span></label>
+          <select id="spine-select"></select>
+        </div>
+        <div class="field">
+          <label for="dihedral">Wing dihedral <output id="dihedral-out">10°</output></label>
+          <input type="range" id="dihedral" min="0" max="40" step="1" value="10">
+          <label class="check"><input type="checkbox" id="per-side"> Set each side separately</label>
+          <div id="per-side-body" hidden>
+            <label for="dihedral-l">Left wing <output id="dihedral-l-out">10°</output></label>
+            <input type="range" id="dihedral-l" min="0" max="40" step="1" value="10">
+            <label for="dihedral-r">Right wing <output id="dihedral-r-out">10°</output></label>
+            <input type="range" id="dihedral-r" min="0" max="40" step="1" value="10">
+          </div>
+        </div>
+        <div class="field" id="tips-field">
+          <label for="tip-select">Wing-tip fold</label>
+          <select id="tip-select"></select>
+          <label for="tip-angle">Angle <output id="tip-out">0°</output></label>
+          <input type="range" id="tip-angle" min="0" max="90" step="1" value="0">
+          <div class="seg-mini" role="group" aria-label="Winglet direction">
+            <button id="tip-up" aria-pressed="true">Up</button><button id="tip-down" aria-pressed="false">Down</button>
+          </div>
+          <p class="hint" id="tip-hint">Crease near a wing tip first, then set its angle here.</p>
+        </div>
+        <div class="stats">
+          <div class="stat"><b id="stat-span">–</b><span>Wing span</span></div>
+          <div class="stat"><b id="stat-mass">–</b><span>Mass, 80 gsm</span></div>
+          <div class="stat"><b id="stat-com">–</b><span>Balance point</span></div>
+        </div>
+        <p class="hint">The pink marker is the center of mass.</p>
+        <div class="warn" id="shape-warn" hidden></div>
+        <p style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
+          <button class="btn secondary" id="copy-geom">Copy geometry JSON</button>
+        </p>
+      </div>
+    </aside>
+
+    <div id="showme" hidden role="dialog" aria-modal="true" aria-labelledby="showme-title">
+      <div class="sheet">
+        <header>
+          <h2 id="showme-title">Show me how</h2>
+          <div class="seg" role="tablist" aria-label="Plane" id="showme-tabs"></div>
+          <button class="btn secondary" id="showme-close">Close</button>
+        </header>
+        <p id="showme-text" style="margin:8px 0 0; color: var(--ink-soft)"></p>
+        <div class="steps" id="showme-steps"></div>
+        <p style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
+          <button class="btn accent" id="showme-load">Load the folded result</button>
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <footer class="dock">
+    <p id="status" role="status" aria-live="polite">Hover a corner to see where it can fold.</p>
+    <div class="toolbar">
+      <div class="seg only-fold" role="radiogroup" aria-label="What happens when you let go">
+        <button role="radio" data-mode="fold" aria-checked="true" title="Fold: the flap stays down (uses one of your folds)">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 16V4h8l6 6v6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M11 4v6h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Fold</button>
+        <button role="radio" data-mode="crease" aria-checked="false" title="Crease: it springs back and leaves a line (free)">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3" width="14" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 17 17 3" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.5 2"/></svg>Crease</button>
+      </div>
+      <button class="tool only-fold" id="btn-undo" title="Undo (Z)" disabled>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5 3 9l4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 9h9a5 5 0 0 1 0 10h-2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span class="lbl">Undo</span></button>
+      <button class="tool only-fold" id="btn-flip" title="Flip the paper over">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 7h10l-3-3M16 13H6l3 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">Flip over</span></button>
+      <button class="tool" id="btn-top" title="Look straight down">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="4" y="4" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="10" cy="10" r="1.8" fill="currentColor"/></svg><span class="lbl">Top view</span></button>
+      <button class="tool" id="btn-reset" title="Start over with a fresh sheet">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10a6 6 0 1 0 2-4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M4 3v3.5h3.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">New sheet</span></button>
+      <div class="budget only-fold" title="Folds left. Creases are free."><span class="pips" id="pips" aria-hidden="true"></span><span id="budget-text">12 folds left</span></div>
+      <button class="tool only-shape" id="btn-back-fold">Back to folding</button>
+    </div>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script id="engine">
+/* =====================================================================
+   PAPER ENGINE — DOM-free. Everything in millimetres.
+   Rest space = the original A4 sheet, centred on the origin, x right, y up
+   (the top edge, y = +148.5, becomes the nose of a classic dart).
+   Panels are convex polygons in rest space and are never reflected.
+   Hinges join two panels along a shared rest-space segment p→q with an
+   angle: 0 = flat/unfolded (a crease), ±π = folded flat. Each panel's world
+   pose is a rigid 3x4 matrix built by walking the hinge graph from an anchor.
+   ===================================================================== */
+(function (root) {
+  'use strict';
+  const SHEET = { w: 210, h: 297 };
+  const GSM = 80;            // grams per square metre
+  const LAYER = 0.4;         // mm between stacked layers when drawn
+  const MAX_LAYERS = 24;
+  const BUDGET = 12;
+  const PI = Math.PI;
+  const TOL = 1e-3;          // side classification tolerance (mm)
+  const LTOL = 0.05;         // "on the line" tolerance for hinges (mm)
+
+  // ---------- 2D vectors ----------
+  const v = (x, y) => ({ x, y });
+  const sub = (a, b) => v(a.x - b.x, a.y - b.y);
+  const add = (a, b) => v(a.x + b.x, a.y + b.y);
+  const mul = (a, s) => v(a.x * s, a.y * s);
+  const dot = (a, b) => a.x * b.x + a.y * b.y;
+  const cross = (a, b) => a.x * b.y - a.y * b.x;
+  const len = a => Math.hypot(a.x, a.y);
+  const dist = (a, b) => len(sub(a, b));
+  const unit = a => { const l = len(a) || 1; return v(a.x / l, a.y / l); };
+  const lerp = (a, b, t) => v(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+  const perp = a => v(-a.y, a.x);
+
+  function polyArea(p) {
+    let s = 0;
+    for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += a.x * b.y - b.x * a.y; }
+    return s / 2;
+  }
+  const ccw = p => (polyArea(p) < 0 ? p.slice().reverse() : p);
+  function centroid(p) {
+    let cx = 0, cy = 0, A = 0;
+    for (let i = 0; i < p.length; i++) {
+      const a = p[i], b = p[(i + 1) % p.length], c = a.x * b.y - b.x * a.y;
+      A += c; cx += (a.x + b.x) * c; cy += (a.y + b.y) * c;
+    }
+    if (Math.abs(A) < 1e-12) return p[0];
+    return v(cx / (3 * A), cy / (3 * A));
+  }
+  function cleanPoly(p) {
+    const out = [];
+    for (const q of p) if (!out.length || dist(out[out.length - 1], q) > 1e-6) out.push(q);
+    if (out.length > 1 && dist(out[0], out[out.length - 1]) <= 1e-6) out.pop();
+    let changed = true;
+    while (changed && out.length >= 3) {
+      changed = false;
+      for (let i = 0; i < out.length; i++) {
+        const a = out[(i + out.length - 1) % out.length], b = out[i], c = out[(i + 1) % out.length];
+        if (Math.abs(cross(sub(b, a), sub(c, b))) < 1e-6 * Math.max(1, dist(a, c))) { out.splice(i, 1); changed = true; break; }
+      }
+    }
+    return out;
+  }
+  // Keep the part of a convex polygon where s*dot(p-P, n) >= 0 (Sutherland–Hodgman)
+  function clipPoly(poly, P, n, s, minArea) {
+    const out = [], m = poly.length, E = 1e-7;
+    for (let i = 0; i < m; i++) {
+      const a = poly[i], b = poly[(i + 1) % m];
+      const da = s * dot(sub(a, P), n), db = s * dot(sub(b, P), n);
+      if (da >= -E) out.push(a);
+      if ((da > E && db < -E) || (da < -E && db > E)) out.push(lerp(a, b, da / (da - db)));
+    }
+    const c = cleanPoly(out);
+    return (c.length < 3 || Math.abs(polyArea(c)) < (minArea == null ? 0.05 : minArea)) ? null : c;
+  }
+  function pointInPoly(p, poly, tol) {
+    tol = tol || 0;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length], e = sub(b, a);
+      if (cross(e, sub(p, a)) < -tol * len(e)) return false;
+    }
+    return true;
+  }
+  function bbox(poly) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of poly) { if (p.x < x0) x0 = p.x; if (p.y < y0) y0 = p.y; if (p.x > x1) x1 = p.x; if (p.y > y1) y1 = p.y; }
+    return { x0, y0, x1, y1 };
+  }
+  const bboxHit = (a, b, m) => !(a.x1 < b.x0 - m || b.x1 < a.x0 - m || a.y1 < b.y0 - m || b.y1 < a.y0 - m);
+  function convexIntersect(a, b) {
+    let out = a;
+    for (let i = 0; i < b.length && out; i++) {
+      const p = b[i], q = b[(i + 1) % b.length];
+      out = clipPoly(out, p, perp(sub(q, p)), 1, 1e-6);
+    }
+    return out;
+  }
+  const overlapArea = (a, b) => { const r = convexIntersect(a, b); return r ? Math.abs(polyArea(r)) : 0; };
+  // The chord of the infinite line dot(p-P,n)=0 inside a convex polygon
+  function lineChord(poly, P, n) {
+    const t = perp(n), pts = [];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const da = dot(sub(a, P), n), db = dot(sub(b, P), n);
+      if (Math.abs(da) < 1e-6) pts.push(a);
+      if ((da > 1e-6 && db < -1e-6) || (da < -1e-6 && db > 1e-6)) pts.push(lerp(a, b, da / (da - db)));
+    }
+    if (pts.length < 2) return null;
+    let lo = pts[0], hi = pts[0];
+    for (const p of pts) { if (dot(p, t) < dot(lo, t)) lo = p; if (dot(p, t) > dot(hi, t)) hi = p; }
+    return dist(lo, hi) < 0.01 ? null : [lo, hi];
+  }
+  const reflectPt = (p, P, n) => sub(p, mul(n, 2 * dot(sub(p, P), n)));
+  function distToSeg(p, a, b) {
+    const ab = sub(b, a), t = Math.max(0, Math.min(1, dot(sub(p, a), ab) / (dot(ab, ab) || 1)));
+    return dist(p, add(a, mul(ab, t)));
+  }
+
+  // ---------- rigid 3x4 matrices, row-major [r00 r01 r02 tx | r10 .. ty | r20 .. tz] ----------
+  const mI = () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
+  function mmul(A, B) {
+    const C = new Array(12);
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) C[r * 4 + c] = A[r * 4] * B[c] + A[r * 4 + 1] * B[4 + c] + A[r * 4 + 2] * B[8 + c];
+      C[r * 4 + 3] = A[r * 4] * B[3] + A[r * 4 + 1] * B[7] + A[r * 4 + 2] * B[11] + A[r * 4 + 3];
+    }
+    return C;
+  }
+  function mapp(A, p) {
+    const z = p.z || 0;
+    return { x: A[0] * p.x + A[1] * p.y + A[2] * z + A[3], y: A[4] * p.x + A[5] * p.y + A[6] * z + A[7], z: A[8] * p.x + A[9] * p.y + A[10] * z + A[11] };
+  }
+  function mdir(A, d) {
+    const z = d.z || 0;
+    return { x: A[0] * d.x + A[1] * d.y + A[2] * z, y: A[4] * d.x + A[5] * d.y + A[6] * z, z: A[8] * d.x + A[9] * d.y + A[10] * z };
+  }
+  function minv(A) { // rigid inverse: [R^T | -R^T t]
+    const R = [A[0], A[4], A[8], A[1], A[5], A[9], A[2], A[6], A[10]];
+    const t = [A[3], A[7], A[11]];
+    return [R[0], R[1], R[2], -(R[0] * t[0] + R[1] * t[1] + R[2] * t[2]),
+      R[3], R[4], R[5], -(R[3] * t[0] + R[4] * t[1] + R[5] * t[2]),
+      R[6], R[7], R[8], -(R[6] * t[0] + R[7] * t[1] + R[8] * t[2])];
+  }
+  // Rotation by th about the axis through point p (3D) with unit direction u (3D)
+  function mrot3(p, u, th) {
+    const c = Math.cos(th), s = Math.sin(th), t = 1 - c, x = u.x, y = u.y, z = u.z || 0;
+    const R = [t * x * x + c, t * x * y - s * z, t * x * z + s * y,
+      t * x * y + s * z, t * y * y + c, t * y * z - s * x,
+      t * x * z - s * y, t * y * z + s * x, t * z * z + c];
+    const pz = p.z || 0;
+    const rp = [R[0] * p.x + R[1] * p.y + R[2] * pz, R[3] * p.x + R[4] * p.y + R[5] * pz, R[6] * p.x + R[7] * p.y + R[8] * pz];
+    return [R[0], R[1], R[2], p.x - rp[0], R[3], R[4], R[5], p.y - rp[1], R[6], R[7], R[8], pz - rp[2]];
+  }
+  const mrot = (p, u, th) => mrot3({ x: p.x, y: p.y, z: 0 }, { x: u.x, y: u.y, z: 0 }, th);
+  const xy = p => v(p.x, p.y);
+  const v3 = {
+    sub: (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }),
+    add: (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }),
+    mul: (a, s) => ({ x: a.x * s, y: a.y * s, z: a.z * s }),
+    dot: (a, b) => a.x * b.x + a.y * b.y + a.z * b.z,
+    cross: (a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x }),
+    len: a => Math.hypot(a.x, a.y, a.z),
+    unit: a => { const l = Math.hypot(a.x, a.y, a.z) || 1; return { x: a.x / l, y: a.y / l, z: a.z / l }; }
+  };
+  function wrapAngle(a) { while (a > PI + 1e-9) a -= 2 * PI; while (a < -PI - 1e-9) a += 2 * PI; return a; }
+  const isFlatAngle = a => Math.abs(a) < 1e-6 || Math.abs(Math.abs(a) - PI) < 1e-6;
+
+  // ---------- model ----------
+  function sheetPoly() { const a = SHEET.w / 2, b = SHEET.h / 2; return [v(-a, -b), v(a, -b), v(a, b), v(-a, b)]; }
+  function createSheet() {
+    return {
+      panels: [{ id: 1, poly: sheetPoly() }],
+      hinges: [],          // {id,a,b,p,q,angle,group,gsign}
+      order: [1],          // panel ids, bottom → top, for the flat stack
+      anchor: { id: 1, T: mI() },
+      groups: [],          // one per fold/crease operation: {id,type,dir,label,kind}
+      foldsUsed: 0, budget: BUDGET,
+      nextId: 2, nextHinge: 1, nextGroup: 1
+    };
+  }
+  const clone = s => JSON.parse(JSON.stringify(s));
+  const panelById = (s, id) => s.panels.find(p => p.id === id);
+  const totalArea = s => s.panels.reduce((t, p) => t + Math.abs(polyArea(p.poly)), 0);
+  const isFlat = s => s.hinges.every(h => isFlatAngle(h.angle));
+
+  // World pose of every panel: product of hinge rotations along the BFS tree from the anchor.
+  // overrides: Map hingeId → angle (used for live drag previews and shaping).
+  function computeTransforms(s, overrides) {
+    const adj = new Map();
+    for (const p of s.panels) adj.set(p.id, []);
+    for (const h of s.hinges) { adj.get(h.a).push({ h, o: h.b, sg: 1 }); adj.get(h.b).push({ h, o: h.a, sg: -1 }); }
+    const T = new Map([[s.anchor.id, s.anchor.T]]), q = [s.anchor.id];
+    while (q.length) {
+      const id = q.shift();
+      for (const e of adj.get(id) || []) {
+        if (T.has(e.o)) continue;
+        const ang = overrides && overrides.has(e.h.id) ? overrides.get(e.h.id) : e.h.angle;
+        T.set(e.o, mmul(T.get(id), mrot(e.h.p, unit(sub(e.h.q, e.h.p)), e.sg * ang)));
+        q.push(e.o);
+      }
+    }
+    for (const p of s.panels) if (!T.has(p.id)) T.set(p.id, mI());
+    return T;
+  }
+  // Largest disagreement (mm) between the two panels sharing a hinge. 0 = consistent.
+  function hingeError(s, T) {
+    T = T || computeTransforms(s);
+    let e = 0;
+    for (const h of s.hinges) for (const p of [h.p, h.q]) e = Math.max(e, v3.len(v3.sub(mapp(T.get(h.a), p), mapp(T.get(h.b), p))));
+    return e;
+  }
+  function worldPolys(s, T) {
+    T = T || computeTransforms(s);
+    const out = new Map();
+    for (const p of s.panels) out.set(p.id, ccw(p.poly.map(q => xy(mapp(T.get(p.id), q)))));
+    return out;
+  }
+  // Layer rank in the flat stack: 1 + the highest rank below it that it overlaps.
+  function computeRanks(s, T) {
+    T = T || computeTransforms(s);
+    const wp = worldPolys(s, T), ranks = new Map(), done = [];
+    for (const id of s.order) {
+      const P = wp.get(id), bb = bbox(P);
+      let r = 0;
+      for (const d of done) if (d.r + 1 > r && bboxHit(bb, d.bb, -0.05) && overlapArea(P, d.P) > 0.2) r = d.r + 1;
+      ranks.set(id, r); done.push({ P, bb, r });
+    }
+    return ranks;
+  }
+  function flatSigns(s, T) {
+    T = T || computeTransforms(s);
+    const out = new Map();
+    for (const p of s.panels) out.set(p.id, mdir(T.get(p.id), { x: 0, y: 0, z: 1 }).z >= 0 ? 1 : -1);
+    return out;
+  }
+
+  // ---------- folding ----------
+  const fail = (reason, extra) => Object.assign({ ok: false, reason }, extra || {});
+  // line: {P, n} — n points toward the side that moves (the side holding the grabbed point).
+  // opts: {mode:'fold'|'crease', dir:+1 valley (lift toward viewer, lands on top) | -1 mountain,
+  //        grab:{x,y}, seedPanel, allLayers, checkThickness, label, kind}
+  function planFold(s, line, opts) {
+    opts = opts || {};
+    const mode = opts.mode || 'fold', dir = opts.dir || 1;
+    if (!isFlat(s)) return fail('Flatten the plane first: folds happen on the flat model.');
+    const P = line.P, n = unit(line.n);
+    const T = computeTransforms(s);
+    const ordIdx = new Map(s.order.map((id, i) => [id, i]));
+    const info = new Map();
+    for (const p of s.panels) {
+      const Tp = T.get(p.id), Ti = minv(Tp);
+      const wp = ccw(p.poly.map(q => xy(mapp(Tp, q))));
+      let mn = Infinity, mx = -Infinity;
+      for (const q of wp) { const d = dot(sub(q, P), n); if (d < mn) mn = d; if (d > mx) mx = d; }
+      const inf = { T: Tp, Ti, wp, side: 's', ord: ordIdx.get(p.id), poly: p.poly };
+      if (mx <= TOL) inf.side = 's';
+      else if (mn >= -TOL) inf.side = 'm';
+      else {
+        inf.Pr = xy(mapp(Ti, { x: P.x, y: P.y, z: 0 }));
+        inf.nr = unit(xy(mdir(Ti, { x: n.x, y: n.y, z: 0 })));
+        inf.mPoly = clipPoly(p.poly, inf.Pr, inf.nr, 1);
+        inf.sPoly = clipPoly(p.poly, inf.Pr, inf.nr, -1);
+        inf.side = !inf.mPoly ? 's' : !inf.sPoly ? 'm' : 'x';
+      }
+      info.set(p.id, inf);
+    }
+    const key = (id, side) => { const i = info.get(id); return (i.side === 'x' || i.side === side) ? id + side : null; };
+    const nodePoly = k => {
+      const id = +k.slice(0, -1), i = info.get(id);
+      if (i.side !== 'x') return { rest: i.poly, world: i.wp };
+      const rest = k.endsWith('m') ? i.mPoly : i.sPoly;
+      return { rest, world: ccw(rest.map(q => xy(mapp(i.T, q)))) };
+    };
+    // moving-side nodes, and the hinge links between them
+    const mNodes = [];
+    for (const p of s.panels) { const k = key(p.id, 'm'); if (k) { const np = nodePoly(k); mNodes.push({ k, id: p.id, ord: info.get(p.id).ord, world: np.world, rest: np.rest, bb: bbox(np.world) }); } }
+    const mByKey = new Map(mNodes.map(m => [m.k, m]));
+    const links = new Map(mNodes.map(m => [m.k, []]));
+    const onLine = [];
+    for (const h of s.hinges) {
+      const Ta = info.get(h.a).T;
+      const wp = xy(mapp(Ta, h.p)), wq = xy(mapp(Ta, h.q));
+      const dp = dot(sub(wp, P), n), dq = dot(sub(wq, P), n);
+      if (Math.abs(dp) <= LTOL && Math.abs(dq) <= LTOL) {
+        const ka = key(h.a, info.get(h.a).side === 'x' ? 'm' : info.get(h.a).side);
+        const kb = key(h.b, info.get(h.b).side === 'x' ? 'm' : info.get(h.b).side);
+        if (!ka || !kb) continue;
+        // a hinge lying on the fold line is the axis itself, never a rigid link
+        onLine.push({ h, ka, kb });
+        continue;
+      }
+      const hi = Math.max(dp, dq), lo = Math.min(dp, dq);
+      if (hi <= LTOL) continue;
+      const mLen = lo >= -LTOL ? dist(wp, wq) : dist(wp, wq) * hi / (hi - lo);
+      if (mLen < 0.05) continue;
+      const ka = key(h.a, 'm'), kb = key(h.b, 'm');
+      if (ka && kb && links.has(ka) && links.has(kb)) { links.get(ka).push(kb); links.get(kb).push(ka); }
+    }
+    if (!mNodes.length) return fail("That fold line doesn't cross the paper.");
+    // seed: the layer that was grabbed
+    let seed = null;
+    if (opts.seedPanel != null && key(opts.seedPanel, 'm')) seed = mByKey.get(key(opts.seedPanel, 'm'));
+    if (!seed && opts.grab) {
+      for (const m of mNodes) if (pointInPoly(opts.grab, m.world, 0.05)) {
+        if (!seed || (dir > 0 ? m.ord > seed.ord : m.ord < seed.ord)) seed = m;
+      }
+    }
+    if (!seed && !opts.allLayers) return fail("That corner can't swing across this line.");
+    // flap selection: hinge-connected pieces, plus moving-side layers stacked on the lifting side
+    const sel = new Set();
+    if (opts.allLayers) mNodes.forEach(m => sel.add(m.k));
+    else {
+      const q = [seed.k]; sel.add(seed.k);
+      while (q.length) {
+        const k = q.shift(), me = mByKey.get(k);
+        for (const k2 of links.get(k)) if (!sel.has(k2)) { sel.add(k2); q.push(k2); }
+        for (const o of mNodes) {
+          if (sel.has(o.k)) continue;
+          if (dir > 0 ? o.ord <= me.ord : o.ord >= me.ord) continue;
+          if (!bboxHit(o.bb, me.bb, -0.05) || overlapArea(o.world, me.world) < 0.5) continue;
+          sel.add(o.k); q.push(o.k);
+        }
+      }
+    }
+    const tot = totalArea(s);
+    let movingArea = 0;
+    for (const k of sel) movingArea += Math.abs(polyArea(mByKey.get(k).rest));
+    if (movingArea < 1) return fail("That fold line doesn't cross the paper.");
+    if (movingArea > tot - 1) return fail('That would move the whole sheet. Pick a line that crosses the paper.');
+
+    // ---- build the new state ----
+    const ns = clone(s);
+    const g = { id: ns.nextGroup++, type: mode, dir, label: opts.label || '', kind: opts.kind || '' };
+    const d3 = dir > 0 ? { x: n.y, y: -n.x, z: 0 } : { x: -n.y, y: n.x, z: 0 }; // world rotation axis
+    const split = new Map(); // panel id → id of its moving piece
+    const moving = new Set();
+    const anim = [];
+    const newPanels = [];
+    for (const p of s.panels) {
+      const i = info.get(p.id);
+      if (i.side === 'x' && sel.has(p.id + 'm')) {
+        const mid = ns.nextId++;
+        split.set(p.id, mid); moving.add(mid);
+        newPanels.push({ id: p.id, poly: i.sPoly }, { id: mid, poly: i.mPoly });
+      } else {
+        newPanels.push({ id: p.id, poly: p.poly });
+        if (i.side === 'm' && sel.has(p.id + 'm')) moving.add(p.id);
+      }
+    }
+    ns.panels = newPanels;
+    // re-home old hinges onto the pieces
+    const newHinges = [];
+    for (const h of s.hinges) {
+      if (!split.has(h.a) && !split.has(h.b)) { newHinges.push(Object.assign({}, h)); continue; }
+      const Ta = info.get(h.a).T;
+      const dp = dot(sub(xy(mapp(Ta, h.p)), P), n), dq = dot(sub(xy(mapp(Ta, h.q)), P), n);
+      const pieces = [];
+      if ((dp >= -LTOL && dq >= -LTOL)) pieces.push({ p: h.p, q: h.q, side: 'm' });
+      else if (dp <= LTOL && dq <= LTOL) pieces.push({ p: h.p, q: h.q, side: 's' });
+      else {
+        const x = lerp(h.p, h.q, dp / (dp - dq));
+        pieces.push({ p: h.p, q: x, side: dp > 0 ? 'm' : 's' }, { p: x, q: h.q, side: dq > 0 ? 'm' : 's' });
+      }
+      for (const pc of pieces) {
+        if (dist(pc.p, pc.q) < 0.01) continue;
+        const a = pc.side === 'm' && split.has(h.a) ? split.get(h.a) : h.a;
+        const b = pc.side === 'm' && split.has(h.b) ? split.get(h.b) : h.b;
+        newHinges.push(Object.assign({}, h, { id: pc === pieces[0] ? h.id : ns.nextHinge++, a, b, p: pc.p, q: pc.q }));
+      }
+    }
+    // new hinges along the fold line, one per split layer
+    for (const [pid, mid] of split) {
+      const i = info.get(pid);
+      const ch = lineChord(i.poly, i.Pr, i.nr);
+      if (!ch) continue;
+      const u = unit(xy(mdir(i.Ti, d3)));
+      const [p0, p1] = dot(sub(ch[1], ch[0]), u) >= 0 ? ch : [ch[1], ch[0]];
+      const h = { id: ns.nextHinge++, a: pid, b: mid, p: p0, q: p1, angle: mode === 'fold' ? PI : 0, group: g.id, gsign: 1 };
+      newHinges.push(h);
+      anim.push({ id: h.id, base: 0, delta: PI });
+    }
+    // existing hinges lying on the line: this is "fold along a crease" (or unfolding a fold)
+    let changedExisting = 0;
+    if (mode === 'fold') {
+      for (const ol of onLine) {
+        if (sel.has(ol.ka) === sel.has(ol.kb)) continue;
+        const sId = sel.has(ol.ka) ? ol.h.b : ol.h.a;
+        const nh = newHinges.find(x => x.id === ol.h.id);
+        const Ti = info.get(sId).Ti;
+        const u = unit(sub(nh.q, nh.p));
+        const sig = dot(u, xy(mdir(Ti, d3))) >= 0 ? 1 : -1;
+        const delta = (nh.a === sId ? 1 : -1) * sig * PI;
+        anim.push({ id: nh.id, base: nh.angle, delta });
+        nh.angle = wrapAngle(nh.angle + delta);
+        nh.group = g.id; nh.gsign = Math.abs(nh.angle) > 1e-6 ? Math.sign(nh.angle) : Math.sign(delta);
+        changedExisting++;
+      }
+    }
+    ns.hinges = newHinges;
+    for (const k of sel) { const id = +k.slice(0, -1); moving.add(split.has(id) ? split.get(id) : id); }
+    if (mode === 'crease' && split.size === 0) return fail("There's already a crease there.", { duplicate: true });
+    if (mode === 'fold' && split.size === 0 && changedExisting === 0) return fail("That fold line doesn't cross the paper.");
+    // stacking order — derived from the fold direction: a valley flap swings over and lands
+    // on top, reversed; a mountain flap swings under and lands at the bottom, reversed.
+    const expanded = [];
+    for (const id of s.order) { expanded.push(id); if (split.has(id)) expanded.push(split.get(id)); }
+    const st = expanded.filter(id => !moving.has(id)), mv = expanded.filter(id => moving.has(id)).reverse();
+    const foldOrder = dir > 0 ? st.concat(mv) : mv.concat(st);
+    ns.order = mode === 'fold' ? foldOrder : expanded;
+    // keep the world anchored to a panel that doesn't move
+    if (moving.has(ns.anchor.id)) {
+      const sid = ns.order.find(id => !moving.has(id));
+      ns.anchor = { id: sid, T: T.get(sid) || mI() };
+    }
+    if (mode === 'fold') ns.foldsUsed++;
+    ns.groups.push(g);
+    const plan = { ok: true, state: ns, anim, moving, split, foldOrder, group: g.id, line: { P, n }, d3, movingArea, totalArea: tot, mode, dir };
+    if (mode === 'fold' && s.foldsUsed >= s.budget) { plan.ok = false; plan.reason = `You've used all ${s.budget} folds. Creases are free, or undo a fold.`; plan.budget = true; }
+    if (mode === 'fold' && opts.checkThickness !== false) {
+      const r = computeRanks(ns); let mx = 0; for (const x of r.values()) mx = Math.max(mx, x);
+      if (mx + 1 > MAX_LAYERS) { plan.ok = false; plan.reason = `That would stack ${mx + 1} layers, too thick to fold.`; }
+    }
+    return plan;
+  }
+  // Angle overrides for drawing a plan part-way through (f: 0 → 1)
+  function planOverrides(plan, f) {
+    const m = new Map();
+    for (const a of plan.anim) m.set(a.id, a.base + a.delta * f);
+    return m;
+  }
+  const lineFromPoints = (A, B) => ({ P: lerp(A, B, 0.5), n: unit(sub(A, B)) });
+  function foldAB(s, A, B, opts) { return planFold(s, lineFromPoints(A, B), Object.assign({ grab: A }, opts)); }
+
+  function flip(s) {
+    const ns = clone(s), T = computeTransforms(ns);
+    let x0 = Infinity, x1 = -Infinity;
+    for (const P of worldPolys(ns, T).values()) for (const p of P) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); }
+    const F = mrot3({ x: (x0 + x1) / 2, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, PI);
+    ns.anchor = { id: ns.anchor.id, T: mmul(F, T.get(ns.anchor.id)) };
+    ns.order.reverse();
+    return ns;
+  }
+
+  // ---------- handles & candidate fold lines (all in flat world space) ----------
+  const ctxCache = new WeakMap();
+  function context(s) {
+    if (ctxCache.has(s)) return ctxCache.get(s);
+    const T = computeTransforms(s), wp = worldPolys(s, T);
+    const ordIdx = new Map(s.order.map((id, i) => [id, i]));
+    const polys = s.panels.map(p => ({ id: p.id, poly: wp.get(p.id), bb: bbox(wp.get(p.id)), ord: ordIdx.get(p.id) }));
+    const covered = pt => polys.some(P => pt.x >= P.bb.x0 - 0.01 && pt.x <= P.bb.x1 + 0.01 && pt.y >= P.bb.y0 - 0.01 && pt.y <= P.bb.y1 + 0.01 && pointInPoly(pt, P.poly, 1e-4));
+    // hinge segments in world
+    const hseg = s.hinges.map(h => {
+      const Ta = T.get(h.a);
+      return { a: xy(mapp(Ta, h.p)), b: xy(mapp(Ta, h.q)), kind: Math.abs(h.angle) < 1e-6 ? 'crease' : 'fold', h };
+    });
+    // outline edges: panel edges with paper on only one side
+    const raw = [];
+    for (const P of polys) for (let i = 0; i < P.poly.length; i++) {
+      const a = P.poly[i], b = P.poly[(i + 1) % P.poly.length];
+      if (dist(a, b) < 0.05) continue;
+      const m = lerp(a, b, 0.5), nn = mul(unit(perp(sub(b, a))), 0.6);
+      if (!covered(add(m, nn)) || !covered(sub(m, nn))) raw.push({ a, b });
+    }
+    const outline = mergeSegments(raw);
+    const panelEdges = [];
+    for (const P of polys) for (let i = 0; i < P.poly.length; i++) panelEdges.push({ a: P.poly[i], b: P.poly[(i + 1) % P.poly.length] });
+    // world area & centroid (layer weighted)
+    let A = 0, cx = 0, cy = 0;
+    for (const P of polys) { const a = Math.abs(polyArea(P.poly)), c = centroid(P.poly); A += a; cx += c.x * a; cy += c.y * a; }
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const P of polys) { x0 = Math.min(x0, P.bb.x0); y0 = Math.min(y0, P.bb.y0); x1 = Math.max(x1, P.bb.x1); y1 = Math.max(y1, P.bb.y1); }
+    const ctx = { T, wp, polys, covered, hseg, outline, panelEdges, area: A, center: v(cx / A, cy / A), bb: { x0, y0, x1, y1 } };
+    ctx.creaseLines = mergeSegments(hseg.filter(h => h.kind === 'crease'));
+    ctx.foldEdges = mergeSegments(hseg.filter(h => h.kind === 'fold' && outline.some(o => segOnSeg(h, o))));
+    ctx.handles = findHandles(s, ctx);
+    ctxCache.set(s, ctx);
+    return ctx;
+  }
+  function segOnSeg(h, o) { // h lies along o
+    return distToSeg(h.a, o.a, o.b) < 0.05 && distToSeg(h.b, o.a, o.b) < 0.05;
+  }
+  // merge collinear overlapping segments into maximal ones
+  function mergeSegments(segs) {
+    const groups = [];
+    for (const sg of segs) {
+      const d = unit(sub(sg.b, sg.a));
+      let g = groups.find(G => Math.abs(cross(G.d, d)) < 1e-4 && Math.abs(cross(G.d, sub(sg.a, G.o))) < 0.05);
+      if (!g) { g = { d, o: sg.a, iv: [] }; groups.push(g); }
+      const t0 = dot(sub(sg.a, g.o), g.d), t1 = dot(sub(sg.b, g.o), g.d);
+      g.iv.push([Math.min(t0, t1), Math.max(t0, t1), sg.kind]);
+    }
+    const out = [];
+    for (const g of groups) {
+      g.iv.sort((a, b) => a[0] - b[0]);
+      let cur = null;
+      for (const iv of g.iv) {
+        if (cur && iv[0] <= cur[1] + 0.05) cur[1] = Math.max(cur[1], iv[1]);
+        else { if (cur) out.push(cur); cur = iv.slice(); cur.d = g.d; cur.o = g.o; }
+      }
+      if (cur) out.push(cur);
+    }
+    return out.map(c => ({ a: add(c.o, mul(c.d, c[0])), b: add(c.o, mul(c.d, c[1])), kind: c[2] }));
+  }
+  function findHandles(s, ctx) {
+    const verts = [];
+    for (const P of ctx.polys) for (const p of P.poly) if (!verts.some(q => dist(p, q) < 0.3)) verts.push(p);
+    const handles = [];
+    for (const V of verts) {
+      let u = 0;
+      for (let k = 0; k < 16; k++) { const a = 0.1 + k * PI / 8; if (!ctx.covered(v(V.x + 0.8 * Math.cos(a), V.y + 0.8 * Math.sin(a)))) u++; }
+      if (u === 0) continue; // interior point: not a handle
+      const ends = ctx.hseg.filter(h => dist(h.a, V) < 0.3 || dist(h.b, V) < 0.3);
+      const straight = u >= 7 && u <= 9;
+      let kind;
+      if (!straight) kind = 'corner';
+      else if (ends.some(e => e.kind === 'crease')) kind = 'crease-end';
+      else continue; // only corners and crease ends are handles
+      let top = null;
+      for (const P of ctx.polys) if (pointInPoly(V, P.poly, 0.05) && (!top || P.ord > top.ord)) top = P;
+      let bottom = null;
+      for (const P of ctx.polys) if (pointInPoly(V, P.poly, 0.05) && (!bottom || P.ord < bottom.ord)) bottom = P;
+      handles.push({ pos: V, kind, label: kind === 'corner' ? 'Corner' : kind === 'crease-end' ? 'Crease end' : 'Fold end', top: top && top.id, bottom: bottom && bottom.id, idx: handles.length });
+    }
+    return handles;
+  }
+  function getHandles(s) { return context(s).handles; }
+
+  const CANDIDATE = {
+    crease: { pri: 0, label: 'Along this crease', say: 'Fold along the crease' },
+    half: { pri: 1, label: 'Fold in half', say: 'Fold the paper in half' },
+    'edge-crease': { pri: 2, label: 'Edge to the crease', say: 'Fold this edge onto the crease' },
+    wing: { pri: 3, label: 'Wing fold', say: 'Fold the wing down, parallel to the spine' },
+    corner: { pri: 4, label: 'Corner to corner', say: 'Bring this corner onto the other corner' },
+    'edge-fold': { pri: 5, label: 'Edge to the fold', say: 'Fold this edge onto the folded edge' },
+    'edge-edge': { pri: 6, label: 'Edge to edge', say: 'Line this edge up with the other edge' },
+    mid: { pri: 7, label: 'Corner to the middle', say: 'Bring this corner to the middle of the edge' }
+  };
+  function lineKey(line) {
+    let n = unit(line.n), c = dot(line.P, n);
+    if (n.y < -1e-9 || (Math.abs(n.y) <= 1e-9 && n.x < 0)) { n = mul(n, -1); c = -c; }
+    return { a: Math.atan2(n.y, n.x), c };
+  }
+  const sameLine = (k1, k2) => Math.abs(k1.c - k2.c) < 0.6 && (Math.abs(k1.a - k2.a) < 0.01 || Math.abs(Math.abs(k1.a - k2.a) - PI) < 0.01 && Math.abs(k1.c + k2.c) < 0.6);
+
+  // Candidate fold lines for a grabbed handle, labelled in plain words, at most `limit`.
+  function getCandidates(s, handle, opts) {
+    opts = opts || {};
+    const ctx = context(s), A = handle.pos, mode = opts.mode || 'fold', dir = opts.dir || 1;
+    const T = [];
+    for (const H of ctx.handles) if (H !== handle && dist(H.pos, A) > 2) T.push({ B: H.pos, type: 'corner' });
+    for (const E of ctx.outline) if (dist(E.a, E.b) > 8) T.push({ B: lerp(E.a, E.b, 0.5), type: 'mid' });
+    // "swing an edge about a pivot V until it lies along another edge or crease leaving V"
+    const rays = ctx.outline.map(e => ({ a: e.a, b: e.b, kind: 'edge' }))
+      .concat(ctx.hseg.map(h => ({ a: h.a, b: h.b, kind: h.kind })))
+      .concat(ctx.panelEdges.map(e => ({ a: e.a, b: e.b, kind: 'edge' })));
+    for (const E of ctx.outline) {
+      let C;
+      if (dist(E.a, A) < 0.5) C = E.b; else if (dist(E.b, A) < 0.5) C = E.a; else continue;
+      const dirE = unit(sub(C, A));
+      const pivots = [];
+      const tryPivot = p => { if (dist(p, A) > 2 && distToSeg(p, A, C) < 0.3 && !pivots.some(q => dist(q, p) < 0.3)) pivots.push(p); };
+      ctx.handles.forEach(H => tryPivot(H.pos)); ctx.hseg.forEach(h => { tryPivot(h.a); tryPivot(h.b); });
+      for (const V of pivots) {
+        const r = dist(A, V);
+        for (const R of rays) {
+          let far;
+          if (dist(R.a, V) < 0.3) far = R.b; else if (dist(R.b, V) < 0.3) far = R.a;
+          else if (distToSeg(V, R.a, R.b) < 0.3) { far = null; for (const e of [R.a, R.b]) addRay(e); continue; }
+          else continue;
+          addRay(far);
+          function addRay(e) {
+            const w = unit(sub(e, V));
+            if (Math.abs(cross(w, dirE)) < 0.02) return;
+            if (dist(e, V) < r - 0.5) return;
+            T.push({ B: add(V, mul(w, r)), type: R.kind === 'crease' ? 'edge-crease' : R.kind === 'fold' ? 'edge-fold' : 'edge-edge' });
+          }
+        }
+      }
+    }
+    for (const C of ctx.creaseLines) {
+      const n = unit(perp(sub(C.b, C.a))), d = dot(sub(A, C.a), n);
+      if (Math.abs(d) < 1) continue;
+      T.push({ B: reflectPt(A, C.a, n), type: 'crease' });
+    }
+    // wing folds run parallel to the spine (the main center fold, once it is on the outline)
+    for (const F of spineEdges(s, ctx)) {
+      const dd = unit(sub(F.b, F.a)), foot = add(F.a, mul(dd, dot(sub(A, F.a), dd)));
+      if (dist(A, foot) < 30) continue;
+      T.push({ B: sub(foot, mul(sub(A, foot), 1 / 3)), type: 'wing' });
+    }
+    // dedupe by line, keeping the most meaningful label
+    const uniq = [];
+    for (const t of T) {
+      if (dist(A, t.B) < 3) continue;
+      const line = lineFromPoints(A, t.B), k = lineKey(line);
+      const ex = uniq.find(u => sameLine(u.k, k));
+      if (ex) { if (CANDIDATE[t.type].pri < CANDIDATE[ex.type].pri) { ex.type = t.type; ex.B = t.B; } continue; }
+      uniq.push({ type: t.type, B: t.B, line, k });
+    }
+    const out = [];
+    for (const u of uniq) {
+      const plan = planFold(s, u.line, { mode, dir, grab: A, seedPanel: dir > 0 ? handle.top : handle.bottom, checkThickness: false, allLayers: mode === 'crease' });
+      if (!plan.ok && !plan.budget) continue;
+      let type = u.type;
+      if (['corner', 'edge-edge', 'mid', 'edge-fold'].includes(type) && isHalving(ctx, u.line)) type = 'half';
+      out.push({ A, B: u.B, line: u.line, type, label: CANDIDATE[type].label, say: CANDIDATE[type].say, plan, ok: plan.ok, reason: plan.reason, chord: modelChord(ctx, u.line) });
+    }
+    out.sort((a, b) => (CANDIDATE[a.type].pri - CANDIDATE[b.type].pri) || (dist(a.A, a.B) - dist(b.A, b.B)));
+    const limit = opts.limit || 6, picked = [], perType = {};
+    const take = c => { picked.push(c); perType[c.type] = (perType[c.type] || 0) + 1; };
+    if (opts.mustInclude) for (const c of out) if (opts.mustInclude(c) && picked.length < limit) take(c);
+    // variety first: at most two of a kind (one "corner to the middle"), then fill up
+    for (const c of out) if (picked.length < limit && !picked.includes(c) && (perType[c.type] || 0) < (c.type === 'mid' ? 1 : 2)) take(c);
+    for (const c of out) if (picked.length < limit && !picked.includes(c)) take(c);
+    return picked;
+  }
+  // "Fold in half": the line splits the model's paper evenly and one side lands on the other
+  function isHalving(ctx, line) {
+    let a = 0, b = 0;
+    const flipped = [];
+    for (const P of ctx.polys) {
+      const m = clipPoly(P.poly, line.P, line.n, 1), st = clipPoly(P.poly, line.P, line.n, -1);
+      if (m) { a += Math.abs(polyArea(m)); flipped.push(m.map(p => reflectPt(p, line.P, line.n))); }
+      if (st) { b += Math.abs(polyArea(st)); flipped.push(st.map(p => reflectPt(p, line.P, line.n))); }
+    }
+    if (Math.min(a, b) / (a + b) < 0.4) return false;
+    for (const F of flipped) for (const p of F) {
+      if (!ctx.polys.some(P => pointInPoly(p, P.poly, 0.6))) return false;
+    }
+    return true;
+  }
+  function spineEdges(s, ctx) {
+    if (!ctx.spine) {
+      const an = analyzeShape(s);
+      ctx.spine = [];
+      if (an.spine) {
+        const segs = s.hinges.filter(h => h.group === an.spine.gid && Math.abs(h.angle) > 1e-6)
+          .map(h => ({ a: xy(mapp(ctx.T.get(h.a), h.p)), b: xy(mapp(ctx.T.get(h.a), h.q)), kind: 'fold' }))
+          .filter(h => ctx.outline.some(o => segOnSeg(h, o)));
+        ctx.spine = mergeSegments(segs);
+      }
+    }
+    return ctx.spine;
+  }
+  // Extent of a line across the folded model (world), for drawing
+  function modelChord(ctx, line) {
+    const t = perp(line.n);
+    let lo = Infinity, hi = -Infinity;
+    for (const P of ctx.polys) {
+      const ch = lineChord(P.poly, line.P, line.n);
+      if (!ch) continue;
+      for (const p of ch) { const k = dot(sub(p, line.P), t); lo = Math.min(lo, k); hi = Math.max(hi, k); }
+    }
+    if (lo > hi) return null;
+    return [add(line.P, mul(t, lo)), add(line.P, mul(t, hi))];
+  }
+  // Fold along an existing crease by grabbing the paper at any point on one side of it
+  function creasePlan(s, crease, grab, opts) {
+    const n0 = unit(perp(sub(crease.b, crease.a)));
+    const d = dot(sub(grab, crease.a), n0);
+    if (Math.abs(d) < 0.5) return fail('Grab the paper on one side of the crease.');
+    const n = d > 0 ? n0 : mul(n0, -1);
+    return planFold(s, { P: crease.a, n }, Object.assign({ grab }, opts));
+  }
+  function hitCrease(s, pt, tolMm) {
+    const ctx = context(s);
+    let best = null, bd = tolMm;
+    for (const C of ctx.creaseLines.concat(ctx.hseg.filter(h => h.kind === 'fold'))) {
+      const d = distToSeg(pt, C.a, C.b);
+      if (d < bd) { bd = d; best = C; }
+    }
+    return best;
+  }
+  function topPanelAt(s, pt, dir) {
+    let best = null;
+    for (const P of context(s).polys) if (pointInPoly(pt, P.poly, 0.05) && (!best || (dir < 0 ? P.ord < best.ord : P.ord > best.ord))) best = P;
+    return best && best.id;
+  }
+
+  // ---------- shaping: open the flat-folded plane in 3D ----------
+  function groupHinges(s, gid) { return s.hinges.filter(h => h.group === gid); }
+  function components(s, cutIds) {
+    const parent = new Map(s.panels.map(p => [p.id, p.id]));
+    const find = x => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
+    for (const h of s.hinges) if (!cutIds.has(h.id)) parent.set(find(h.a), find(h.b));
+    return find;
+  }
+  function analyzeShape(s, opts) {
+    opts = opts || {};
+    const T = computeTransforms(s), tot = totalArea(s);
+    const areaOf = new Map(s.panels.map(p => [p.id, Math.abs(polyArea(p.poly))]));
+    const folded = s.groups.filter(g => groupHinges(s, g.id).some(h => Math.abs(Math.abs(h.angle) - PI) < 1e-6));
+    let spine = null;
+    for (const g of folded) {
+      if (opts.spine != null && g.id !== opts.spine) continue;
+      const H = groupHinges(s, g.id).filter(h => Math.abs(h.angle) > 1e-6);
+      const find = components(s, new Set(H.map(h => h.id)));
+      const ca = find(H[0].a), cb = find(H[0].b);
+      if (ca === cb) continue;
+      let A = 0, B = 0;
+      for (const p of s.panels) { const c = find(p.id); if (c === ca) A += areaOf.get(p.id); else if (c === cb) B += areaOf.get(p.id); }
+      const score = Math.min(A, B) / tot;
+      if ((score > 0.25 || opts.spine != null) && score > 0 && (!spine || score > spine.score + 1e-6)) spine = { gid: g.id, score, find, ca, cb, hinges: H };
+    }
+    if (!spine) return { spine: null, wings: {}, tips: [], groups: s.groups, folded };
+    const seg = h => ({ a: mapp(T.get(h.a), h.p), b: mapp(T.get(h.a), h.q) });
+    const s0 = seg(spine.hinges[0]), sd = v3.unit(v3.sub(s0.b, s0.a));
+    const distToSpine = p => { const w = v3.sub(p, s0.a); return v3.len(v3.sub(w, v3.mul(sd, v3.dot(w, sd)))); };
+    const parallel = h => { const sg = seg(h); return v3.len(v3.cross(v3.unit(v3.sub(sg.b, sg.a)), sd)) < 0.2; };
+    const sideOf = h => (spine.find(h.a) === spine.ca ? 'A' : 'B');
+    const wings = {};
+    for (const g of folded) {
+      if (g.id === spine.gid) continue;
+      const H = groupHinges(s, g.id).filter(h => Math.abs(h.angle) > 1e-6);
+      if (!H.length || !H.every(parallel)) continue;
+      const dd = distToSpine(seg(H[0]).a);
+      if (dd < 5) continue;
+      const side = sideOf(H[0]);
+      const L = H.reduce((t, h) => t + dist(h.p, h.q), 0);
+      if (!wings[side] || L > wings[side].len) wings[side] = { gid: g.id, len: L, dist: dd };
+    }
+    // wing-tip folds: creases/folds parallel to the spine that sit out on a wing
+    const cut = new Set(spine.hinges.map(h => h.id));
+    for (const side of ['A', 'B']) if (wings[side]) groupHinges(s, wings[side].gid).forEach(h => cut.add(h.id));
+    const find2 = components(s, cut);
+    const keel = new Set(spine.hinges.flatMap(h => [find2(h.a), find2(h.b)]));
+    const tips = [];
+    for (const g of s.groups) {
+      if (g.id === spine.gid || (wings.A && wings.A.gid === g.id) || (wings.B && wings.B.gid === g.id)) continue;
+      const H = groupHinges(s, g.id);
+      if (!H.length || !H.every(parallel)) continue;
+      for (const side of ['A', 'B']) {
+        const hs = H.filter(h => sideOf(h) === side && !keel.has(find2(h.a)) && (!wings[side] || true));
+        if (!hs.length || !wings[side]) continue;
+        tips.push({ key: g.id + ':' + side, gid: g.id, side, hinges: hs.map(h => h.id), type: g.type });
+      }
+    }
+    return { spine: { gid: spine.gid, score: spine.score }, wings, tips, groups: s.groups, folded };
+  }
+  const rad = d => d * PI / 180;
+  // params: {dihedralA, dihedralB, keel (total keel opening, deg), tips: {gid: signedDeg}}
+  function applyShape(s, an, params) {
+    const ns = clone(s);
+    if (!an || !an.spine) return ns;
+    const kappa = (params.keel == null ? 10 : params.keel) / 2;
+    const dA = params.dihedralA || 0, dB = params.dihedralB == null ? dA : params.dihedralB;
+    const hasWings = an.wings.A || an.wings.B;
+    for (const h of ns.hinges) {
+      if (h.group === an.spine.gid && Math.abs(h.angle) > 1e-6) h.angle = h.gsign * (hasWings ? PI - rad(2 * kappa) : rad(dA + dB));
+      if (an.wings.A && h.group === an.wings.A.gid && Math.abs(h.angle) > 1e-6) h.angle = h.gsign * rad(90 - kappa - dA);
+      if (an.wings.B && h.group === an.wings.B.gid && Math.abs(h.angle) > 1e-6) h.angle = h.gsign * rad(90 - kappa - dB);
+    }
+    for (const t of an.tips || []) {
+      const a = params.tips && params.tips[t.key];
+      if (a == null) continue;
+      for (const h of ns.hinges) if (t.hinges.includes(h.id)) h.angle = h.gsign * rad(a);
+    }
+    return ns;
+  }
+  // World → flight frame: origin at the centre of mass, +y up, -z toward the nose, +x right.
+  function flightFrame(s, T, an) {
+    T = T || computeTransforms(s);
+    const com = centerOfMass(s, T);
+    if (!an || !an.spine) return { M: mI(), com, nose: null };
+    const H = s.hinges.filter(h => h.group === an.spine.gid && Math.abs(h.angle) > 1e-6);
+    const pts = [];
+    for (const h of H) pts.push(mapp(T.get(h.a), h.p), mapp(T.get(h.a), h.q));
+    let u = v3.unit(v3.sub(pts[1], pts[0]));
+    const o = pts[0];
+    let t0 = Infinity, t1 = -Infinity;
+    for (const p of pts) { const t = v3.dot(v3.sub(p, o), u); t0 = Math.min(t0, t); t1 = Math.max(t1, t); }
+    // nose = the pointed end: the end of the spine where the paper is narrowest
+    const L = t1 - t0, near = [0, 0];
+    for (const p of s.panels) {
+      const M = T.get(p.id);
+      for (let i = 0; i < p.poly.length; i++) {
+        const a = p.poly[i], b = p.poly[(i + 1) % p.poly.length], k = Math.max(1, Math.ceil(dist(a, b) / 4));
+        for (let j = 0; j < k; j++) {
+          const w = v3.sub(mapp(M, lerp(a, b, j / k)), o), t = v3.dot(w, u);
+          const r = v3.len(v3.sub(w, v3.mul(u, t)));
+          if (t > t1 - 0.2 * L) near[1] = Math.max(near[1], r);
+          if (t < t0 + 0.2 * L) near[0] = Math.max(near[0], r);
+        }
+      }
+    }
+    const tc = v3.dot(v3.sub(com, o), u);
+    const flipAxis = Math.abs(near[0] - near[1]) > 2 ? near[0] < near[1] : Math.abs(tc - (t0 + t1) / 2) > 0.5 ? tc < (t0 + t1) / 2 : u.y < 0;
+    if (flipAxis) { u = v3.mul(u, -1); const a = -t1; t1 = -t0; t0 = a; }
+    const f = u; // forward
+    const w = v3.sub(v3.sub(com, o), v3.mul(f, v3.dot(v3.sub(com, o), f)));
+    let up = v3.len(w) > 0.3 ? v3.unit(w) : { x: 0, y: 0, z: 1 };
+    up = v3.unit(v3.sub(up, v3.mul(f, v3.dot(up, f))));
+    const right = v3.cross(f, up), back = v3.mul(f, -1);
+    const R = [right.x, right.y, right.z, up.x, up.y, up.z, back.x, back.y, back.z];
+    const M = [R[0], R[1], R[2], 0, R[3], R[4], R[5], 0, R[6], R[7], R[8], 0];
+    const c = mapp(M, com);
+    M[3] = -c.x; M[7] = -c.y; M[11] = -c.z;
+    return { M, com, nose: v3.add(o, v3.mul(f, t1)), tail: v3.add(o, v3.mul(f, t0)) };
+  }
+  function centerOfMass(s, T) {
+    T = T || computeTransforms(s);
+    let A = 0, c = { x: 0, y: 0, z: 0 };
+    for (const p of s.panels) {
+      const a = Math.abs(polyArea(p.poly)), cc = mapp(T.get(p.id), centroid(p.poly));
+      A += a; c = v3.add(c, v3.mul(cc, a));
+    }
+    return v3.mul(c, 1 / A);
+  }
+  const massGrams = s => GSM * totalArea(s) / 1e6;
+  // Opened a little, does paper reach out on both sides of the spine? (false when both wings
+  // were folded to the same side, so one would have to pass through the other to open)
+  function wingsOpenBothWays(s, minReach) {
+    const an = analyzeShape(s);
+    if (!an.spine || !an.wings.A || !an.wings.B) return false;
+    const sh = applyShape(s, an, { dihedralA: 10, dihedralB: 10 });
+    const T = computeTransforms(sh), ff = flightFrame(sh, T, an);
+    let lo = Infinity, hi = -Infinity;
+    for (const p of sh.panels) { const M = mmul(ff.M, T.get(p.id)); for (const q of p.poly) { const x = mapp(M, q).x; lo = Math.min(lo, x); hi = Math.max(hi, x); } }
+    const r = minReach == null ? 30 : minReach;
+    return lo < -r && hi > r;
+  }
+
+  // Per-panel geometry for a physics engine. frame 'flight' (when a spine exists) or 'world'.
+  function getPanels3D(s, opts) {
+    opts = opts || {};
+    const T0 = computeTransforms(s);
+    const an = opts.analysis || analyzeShape(opts.flatState || s);
+    const ff = opts.frame === 'world' ? null : flightFrame(s, T0, an);
+    const T = new Map();
+    for (const [id, M] of T0) T.set(id, ff ? mmul(ff.M, M) : M);
+    const out = [];
+    let span = [Infinity, -Infinity];
+    for (const p of s.panels) {
+      const M = T.get(p.id), W = p.poly.map(q => mapp(M, q));
+      const tris = [];
+      for (let i = 1; i < W.length - 1; i++) tris.push([W[0], W[i], W[i + 1]]);
+      W.forEach(q => { span[0] = Math.min(span[0], q.x); span[1] = Math.max(span[1], q.x); });
+      // layers: coplanar panels overlapping this one (including itself)
+      const Mi = minv(M);
+      let layers = 1;
+      for (const o of s.panels) {
+        if (o === p) continue;
+        const R = mmul(Mi, T.get(o.id)), Q = o.poly.map(q => mapp(R, q));
+        if (Q.some(q => Math.abs(q.z) > 0.05)) continue;
+        if (overlapArea(p.poly, ccw(Q.map(xy))) > 0.5) layers++;
+      }
+      out.push({ id: p.id, triangles: tris, area: Math.abs(polyArea(p.poly)), normal: mdir(M, { x: 0, y: 0, z: 1 }), centroid: mapp(M, centroid(p.poly)), layers });
+    }
+    const massG = massGrams(s);
+    return { units: 'mm', frame: ff && an.spine ? 'flight (x right, y up, -z toward the nose, origin at centre of mass)' : 'world', panels: out, totalArea: totalArea(s), massGrams: massG, gsm: GSM, centerOfMass: ff ? { x: 0, y: 0, z: 0 } : centerOfMass(s, T0), span: span[1] - span[0] };
+  }
+
+  // Run a scripted list of folds (templates, tests). Each step: {A:[x,y], B:[x,y], mode, dir, allLayers}
+  function runScript(steps, from) {
+    let s = from || createSheet();
+    const states = [s], plans = [];
+    for (const st of steps) {
+      const A = v(st.A[0], st.A[1]), B = v(st.B[0], st.B[1]);
+      const plan = planFold(s, lineFromPoints(A, B), { grab: A, mode: st.mode || 'fold', dir: st.dir || 1, allLayers: st.allLayers, label: st.label, kind: st.kind });
+      if (!plan.ok) throw new Error('Script step failed: ' + (st.label || '') + ' — ' + plan.reason);
+      s = plan.state; states.push(s); plans.push(plan);
+    }
+    return { state: s, states, plans };
+  }
+  const R2 = Math.SQRT2;
+  const TEMPLATES = {
+    dart: {
+      name: 'Classic dart',
+      steps: [
+        { A: [-105, 148.5], B: [105, 148.5], mode: 'crease', label: 'Crease it in half lengthwise' },
+        { A: [-105, 148.5], B: [0, 43.5], label: 'Top left corner to the center crease' },
+        { A: [105, 148.5], B: [0, 43.5], label: 'Top right corner to the center crease' },
+        { A: [-105, 43.5], B: [0, 0], label: 'Left slanted edge to the center crease' },
+        { A: [105, 43.5], B: [0, 0], label: 'Right slanted edge to the center crease' },
+        { A: [-105, -148.5], B: [105, -148.5], label: 'Fold in half along the center crease' },
+        { A: [105, -148.5], B: [-35, -148.5], label: 'Fold the top wing down', kind: 'wing' },
+        { A: [105, -148.5], B: [-35, -148.5], dir: -1, label: 'Fold the other wing to match', kind: 'wing' }
+      ],
+      shape: { dihedral: 8 }
+    },
+    glider: {
+      name: 'Wide-wing glider',
+      steps: [
+        { A: [-105, 148.5], B: [105, 148.5], mode: 'crease', label: 'Crease it in half lengthwise' },
+        { A: [-105, 148.5], B: [0, 43.5], label: 'Top left corner to the center crease' },
+        { A: [105, 148.5], B: [0, 43.5], label: 'Top right corner to the center crease' },
+        { A: [0, 148.5], B: [0, -40], label: 'Fold the nose point down' },
+        { A: [-105, -148.5], B: [105, -148.5], label: 'Fold in half along the center crease' },
+        { A: [105, -148.5], B: [-65, -148.5], label: 'Fold a wide wing down, close to the spine', kind: 'wing' },
+        { A: [105, -148.5], B: [-65, -148.5], dir: -1, label: 'Fold the other wing to match', kind: 'wing' }
+      ],
+      shape: { dihedral: 6 }
+    },
+    stunt: {
+      name: 'Stunt plane with winglets',
+      steps: [
+        { A: [-105, 148.5], B: [105, 148.5], mode: 'crease', label: 'Crease it in half lengthwise' },
+        { A: [-105, 148.5], B: [0, 43.5], label: 'Top left corner to the center crease' },
+        { A: [105, 148.5], B: [0, 43.5], label: 'Top right corner to the center crease' },
+        { A: [-105, 43.5], B: [0, 0], label: 'Left slanted edge to the center crease' },
+        { A: [105, 43.5], B: [0, 0], label: 'Right slanted edge to the center crease' },
+        { A: [-105, -148.5], B: [105, -148.5], label: 'Fold in half along the center crease' },
+        { A: [105, -148.5], B: [73, -148.5], mode: 'crease', allLayers: true, label: 'Crease both wing tips, 16 mm in' },
+        { A: [105, -148.5], B: [-35, -148.5], label: 'Fold the top wing down', kind: 'wing' },
+        { A: [105, -148.5], B: [-35, -148.5], dir: -1, label: 'Fold the other wing to match', kind: 'wing' }
+      ],
+      shape: { dihedral: 4, tips: 70 }
+    }
+  };
+
+  root.PaperEngine = {
+    SHEET, GSM, LAYER, MAX_LAYERS, BUDGET, TEMPLATES, CANDIDATE,
+    vec: { v, sub, add, mul, dot, cross, len, dist, unit, lerp, perp, polyArea, centroid, ccw, reflectPt, distToSeg, pointInPoly, overlapArea, convexIntersect, clipPoly, lineChord, bbox },
+    mat: { mI, mmul, mapp, mdir, minv, mrot, mrot3 },
+    v3,
+    createSheet, clone, isFlat, totalArea, computeTransforms, hingeError, worldPolys, computeRanks, flatSigns,
+    planFold, planOverrides, foldAB, lineFromPoints, flip, getHandles, getCandidates, creasePlan, hitCrease, topPanelAt, context,
+    analyzeShape, applyShape, flightFrame, centerOfMass, massGrams, getPanels3D, runScript, panelById, wingsOpenBothWays
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script id="engine-tests">
+/* =====================================================================
+   ENGINE TESTS — run in Node (test/run-tests.mjs) or in the page with ?test
+   ===================================================================== */
+(function (root) {
+  'use strict';
+  const E = root.PaperEngine, { v, dist, polyArea } = E.vec;
+  const near = (a, b, eps) => Math.abs(a - b) <= (eps == null ? 1e-6 : eps);
+  const SHEET_AREA = 210 * 297;
+  function worldArea(s) { let a = 0; for (const P of E.worldPolys(s).values()) a += Math.abs(polyArea(P)); return a; }
+  function allIdentity(s) {
+    const T = E.computeTransforms(s), I = E.mat.mI();
+    for (const M of T.values()) for (let i = 0; i < 12; i++) if (Math.abs(M[i] - I[i]) > 1e-9) return false;
+    return true;
+  }
+  const deg = r => r * 180 / Math.PI;
+
+  const tests = [
+    ['(a) center crease then both nose folds conserves total area', () => {
+      const r = E.runScript(E.TEMPLATES.dart.steps.slice(0, 3));
+      const s = r.state;
+      if (!near(E.totalArea(s), SHEET_AREA, 1e-6)) throw new Error('rest area ' + E.totalArea(s));
+      if (!near(worldArea(s), SHEET_AREA, 1e-6)) throw new Error('world area ' + worldArea(s));
+      if (s.foldsUsed !== 2) throw new Error('folds used ' + s.foldsUsed + ' (crease should be free)');
+      if (E.hingeError(s) > 1e-9) throw new Error('hinges disagree');
+      // the folded outline is a house shape: a point at the top, area of the footprint is less than the sheet
+      const ctx = E.context(s);
+      const top = ctx.handles.find(h => dist(h.pos, v(0, 148.5)) < 0.5);
+      if (!top) throw new Error('nose point should be a handle');
+    }],
+    ['(b) fold then unfold along the same line restores the original sheet (hinge angle 0)', () => {
+      let s = E.createSheet();
+      const p1 = E.foldAB(s, v(-105, -148.5), v(105, -148.5));
+      if (!p1.ok) throw new Error(p1.reason);
+      s = p1.state;
+      if (!near(Math.abs(s.hinges[0].angle), Math.PI)) throw new Error('fold should be at 180');
+      if (allIdentity(s)) throw new Error('fold should move something');
+      // grab the folded flap (now on the right, on top) and fold it back along the same line
+      const p2 = E.foldAB(s, v(105, -148.5), v(-105, -148.5));
+      if (!p2.ok) throw new Error(p2.reason);
+      s = p2.state;
+      if (s.hinges.length !== 1) throw new Error('should reuse the existing hinge, got ' + s.hinges.length);
+      if (!near(s.hinges[0].angle, 0)) throw new Error('angle ' + s.hinges[0].angle);
+      if (!allIdentity(s)) throw new Error('every panel should be back in rest position');
+      if (!near(worldArea(s), SHEET_AREA)) throw new Error('area');
+    }],
+    ['(c) folded in half with wings down opens to a 20° dihedral', () => {
+      let s = E.runScript([
+        { A: [-105, -148.5], B: [105, -148.5], label: 'half' },
+        { A: [105, -148.5], B: [-35, -148.5], kind: 'wing' },
+        { A: [105, -148.5], B: [-35, -148.5], dir: -1, kind: 'wing' }
+      ]).state;
+      const an = E.analyzeShape(s);
+      if (!an.spine) throw new Error('no spine found');
+      if (!an.wings.A || !an.wings.B) throw new Error('both wings should be found');
+      const sh = E.applyShape(s, an, { dihedralA: 20, dihedralB: 20, keel: 10 });
+      if (E.hingeError(sh) > 1e-6) throw new Error('shaped model tears at a hinge: ' + E.hingeError(sh));
+      const g = E.getPanels3D(sh, { analysis: an });
+      // wing panels: the ones farthest out in |x|
+      const byX = g.panels.slice().sort((a, b) => Math.abs(b.centroid.x) - Math.abs(a.centroid.x));
+      const L = byX.find(p => p.centroid.x < 0), R = byX.find(p => p.centroid.x > 0);
+      for (const p of [L, R]) {
+        const elev = deg(Math.acos(Math.min(1, Math.abs(p.normal.y))));
+        if (!near(elev, 20, 0.01)) throw new Error('wing elevation ' + elev.toFixed(3));
+      }
+      // wings rise toward the tips (a V, not an inverted V)
+      for (const p of [L, R]) {
+        const tip = p.triangles.flat().reduce((a, b) => (Math.abs(b.x) > Math.abs(a.x) ? b : a));
+        const root = p.triangles.flat().reduce((a, b) => (Math.abs(b.x) < Math.abs(a.x) ? b : a));
+        if (!(tip.y > root.y)) throw new Error('wing tip should be higher than its root');
+      }
+      if (!near(Math.abs(L.centroid.x), Math.abs(R.centroid.x), 0.01)) throw new Error('should be symmetric');
+      if (!near(g.span, 2 * (70 * Math.cos(20 * Math.PI / 180)) + 2 * 35 * Math.sin(5 * Math.PI / 180), 0.01)) throw new Error('span ' + g.span);
+      if (!near(g.massGrams, 80 * 0.06237, 1e-6)) throw new Error('mass');
+    }],
+    ['(d) duplicate creases are rejected', () => {
+      let s = E.createSheet();
+      const c1 = E.foldAB(s, v(-105, 148.5), v(105, 148.5), { mode: 'crease' });
+      if (!c1.ok) throw new Error(c1.reason);
+      s = c1.state;
+      const c2 = E.foldAB(s, v(-105, -148.5), v(105, -148.5), { mode: 'crease' });
+      if (c2.ok || !c2.duplicate) throw new Error('second crease on the same line should be rejected');
+      const c3 = E.foldAB(s, v(105, 148.5), v(-105, 148.5), { mode: 'crease', allLayers: true });
+      if (c3.ok) throw new Error('from the other side too');
+      if (s.hinges.length !== 1 || s.hinges[0].angle !== 0) throw new Error('crease is a hinge at 0');
+    }],
+    ['full classic dart folds flat, consistently, within budget', () => {
+      const r = E.runScript(E.TEMPLATES.dart.steps);
+      const s = r.state;
+      if (E.hingeError(s) > 1e-6) throw new Error('hinge error ' + E.hingeError(s));
+      if (!near(E.totalArea(s), SHEET_AREA, 1e-6)) throw new Error('area');
+      if (s.foldsUsed !== 7) throw new Error('folds ' + s.foldsUsed);
+      const an = E.analyzeShape(s);
+      if (!an.spine || !an.wings.A || !an.wings.B) throw new Error('dart should have a spine and two wings');
+      const sh = E.applyShape(s, an, { dihedralA: 10, dihedralB: 10 });
+      if (E.hingeError(sh) > 1e-6) throw new Error('shaped dart tears: ' + E.hingeError(sh));
+      const g = E.getPanels3D(sh, { analysis: an });
+      if (!near(g.span, 2 * (35 * Math.sin(5 * Math.PI / 180) + 70 * Math.cos(10 * Math.PI / 180)), 0.01)) throw new Error('span ' + g.span);
+      // nose is forward (-z) and pointed; the wide wings sit at the back
+      const pts = g.panels.flatMap(p => p.triangles.flat());
+      let z0 = Infinity, z1 = -Infinity; pts.forEach(q => { z0 = Math.min(z0, q.z); z1 = Math.max(z1, q.z); });
+      const width = (a, b) => pts.filter(q => q.z >= a && q.z <= b).reduce((m, q) => Math.max(m, Math.abs(q.x)), 0);
+      const front = width(z0, z0 + 40), back = width(z1 - 40, z1);
+      if (!(front < back / 2)) throw new Error(`nose should be the pointed end (front ${front.toFixed(1)}, back ${back.toFixed(1)})`);
+      const tip = pts.reduce((a, q) => (q.z < a.z ? q : a));
+      if (Math.abs(tip.x) > 10) throw new Error('nose should be on the centre line');
+      const ranks = E.computeRanks(s); let mx = 0; ranks.forEach(x => mx = Math.max(mx, x));
+      if (mx + 1 > E.MAX_LAYERS) throw new Error('too many layers ' + (mx + 1));
+    }],
+    ['every template folds and shapes cleanly', () => {
+      for (const k of Object.keys(E.TEMPLATES)) {
+        const s = E.runScript(E.TEMPLATES[k].steps).state;
+        if (E.hingeError(s) > 1e-6) throw new Error(k + ' hinge error');
+        const an = E.analyzeShape(s);
+        if (!an.spine) throw new Error(k + ' spine');
+        const tips = {}; if (E.TEMPLATES[k].shape.tips) an.tips.forEach(t => tips[t.key] = E.TEMPLATES[k].shape.tips);
+        if (E.TEMPLATES[k].shape.tips && an.tips.length < 2) throw new Error(k + ' should have two wing-tip creases, got ' + an.tips.length);
+        const sh = E.applyShape(s, an, { dihedralA: 10, tips });
+        if (E.hingeError(sh) > 1e-6) throw new Error(k + ' shaped hinge error ' + E.hingeError(sh));
+      }
+    }],
+    ['handles and plain-language candidates', () => {
+      let s = E.createSheet();
+      const hs = E.getHandles(s);
+      if (hs.length !== 4 || hs.some(h => h.kind !== 'corner')) throw new Error('blank sheet has 4 corners');
+      const tl = hs.find(h => dist(h.pos, v(-105, 148.5)) < 0.1);
+      const cands = E.getCandidates(s, tl);
+      if (cands.length > 6) throw new Error('too many candidates');
+      if (!cands.some(c => c.label === 'Fold in half')) throw new Error('fold in half missing: ' + cands.map(c => c.label));
+      s = E.foldAB(s, v(-105, 148.5), v(105, 148.5), { mode: 'crease' }).state;
+      const hs2 = E.getHandles(s);
+      if (hs2.filter(h => h.kind === 'crease-end').length !== 2) throw new Error('crease ends should be handles');
+      const tl2 = hs2.find(h => dist(h.pos, v(-105, 148.5)) < 0.1);
+      const c2 = E.getCandidates(s, tl2);
+      const ec = c2.find(c => c.label === 'Edge to the crease');
+      if (!ec || dist(ec.B, v(0, 43.5)) > 0.01) throw new Error('edge-to-crease should land at (0,43.5): ' + c2.map(c => c.label));
+      if (!c2.some(c => c.label === 'Along this crease')) throw new Error('along this crease missing');
+    }],
+    ['flip over mirrors the model and reverses the stack', () => {
+      let s = E.runScript(E.TEMPLATES.dart.steps.slice(0, 3)).state;
+      const before = s.order.slice();
+      const f = E.flip(s);
+      if (f.order[0] !== before[before.length - 1]) throw new Error('order should reverse');
+      if (!near(worldArea(f), SHEET_AREA)) throw new Error('area');
+      if (E.hingeError(f) > 1e-9) throw new Error('hinges');
+      const back = E.flip(f);
+      const a = E.worldPolys(s), b = E.worldPolys(back);
+      for (const [id, P] of a) P.forEach((p, i) => { if (dist(p, b.get(id)[i]) > 1e-6) throw new Error('double flip should restore'); });
+    }],
+    ['wings folded to opposite sides open both ways; same-side wings do not', () => {
+      const s = E.runScript(E.TEMPLATES.dart.steps.slice(0, 7)).state;
+      const same = E.foldAB(s, v(105, -148.5), v(-35, -148.5));
+      if (!same.ok) throw new Error(same.reason);
+      if (E.wingsOpenBothWays(same.state)) throw new Error('same-side wings should be detected');
+      const good = E.foldAB(s, v(105, -148.5), v(-35, -148.5), { dir: -1 });
+      if (!good.ok || !E.wingsOpenBothWays(good.state)) throw new Error('matched wings should open both ways');
+    }],
+    ['folds outside the paper and whole-sheet moves are refused', () => {
+      const s = E.createSheet();
+      const r = E.planFold(s, { P: v(200, 0), n: v(1, 0) }, { grab: v(210, 0) });
+      if (r.ok) throw new Error('off-paper fold accepted');
+      const r2 = E.planFold(s, { P: v(-200, 0), n: v(1, 0) }, { grab: v(0, 0) });
+      if (r2.ok) throw new Error('whole-sheet fold accepted');
+    }],
+    ['fold budget is enforced, creases stay free', () => {
+      let s = E.createSheet(); s.foldsUsed = s.budget;
+      const p = E.foldAB(s, v(-105, -148.5), v(105, -148.5));
+      if (p.ok || !p.budget) throw new Error('should be over budget');
+      const c = E.foldAB(s, v(-105, -148.5), v(105, -148.5), { mode: 'crease' });
+      if (!c.ok) throw new Error('creases are free');
+    }]
+  ];
+
+  function run() {
+    const results = [];
+    for (const [name, fn] of tests) {
+      try { fn(); results.push({ name, ok: true }); } catch (e) { results.push({ name, ok: false, error: e.message }); }
+    }
+    return results;
+  }
+  root.PaperTests = { run };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script id="app-ui">
+/* =====================================================================
+   APP UI — three.js view, pointer/keyboard interaction, guide, shaping
+   ===================================================================== */
+(function () {
+  'use strict';
+  const E = window.PaperEngine;
+  const { v, sub, add, mul, dot, dist, unit, lerp, perp, cross, len } = E.vec;
+  const $ = s => document.querySelector(s);
+  const params = new URLSearchParams(location.search);
+
+  if (params.has('test')) {
+    const res = window.PaperTests.run();
+    const box = document.createElement('div'); box.id = 'testout';
+    const pass = res.filter(r => r.ok).length;
+    box.innerHTML = `<h2 style="margin:0 0 8px">Engine tests: ${pass}/${res.length} passed</h2>` +
+      res.map(r => `<div class="${r.ok ? 'pass' : 'fail'}">${r.ok ? '✓' : '✗'} ${r.name}${r.ok ? '' : ' — ' + r.error}</div>`).join('');
+    document.body.appendChild(box);
+    window.__testResults = res;
+  }
+  if (!window.THREE) {
+    $('#status').textContent = 'The 3D view needs three.js from cdnjs. Check your connection and reload.';
+    return;
+  }
+
+  const motionQuery = matchMedia('(prefers-reduced-motion: reduce)');
+  const reduced = () => motionQuery.matches;
+  const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const LIFT = 2.5;            // the sheet rests just above the mat so it casts a soft shadow
+  const LAYER = E.LAYER;
+  const DEG = Math.PI / 180;
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const ease = {
+    out: t => 1 - Math.pow(1 - t, 3),
+    inOut: t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
+    spring: t => 1 - Math.cos(t * Math.PI * 2.5) * Math.exp(-5 * t) // settles with a small wobble
+  };
+
+  // ------------------------------------------------------------ state
+  const app = {
+    state: E.createSheet(), history: [], version: 0, mode: 'fold', tab: 'fold',
+    ghost: null, pulses: [], selCrease: null, flash: null,
+    hover: null, focusIdx: -1, candSel: 0,
+    drag: null, busy: false, shake: null,
+    isTouch: matchMedia('(pointer: coarse)').matches, look: false,
+    shape: { spine: null, dA: 10, dB: 10, perSide: false, keel: 10, tips: {}, tipDir: {}, tipSel: null, touched: false, an: null, shaped: null, upSign: {} },
+    guide: { on: !params.has('free'), step: 0, nudge: '' },
+    wingMatch: null
+  };
+
+  // ------------------------------------------------------------ three.js scene
+  const glCanvas = $('#gl'), ov = $('#overlay'), octx = ov.getContext('2d'), stage = $('#stage');
+  const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(30, 1, 5, 9000);
+  const amb = new THREE.AmbientLight(0xffffff, 0.64);
+  const sun = new THREE.DirectionalLight(0xffffff, 0.45);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -380, right: 380, top: 380, bottom: -380, near: 10, far: 2400 });
+  sun.shadow.bias = -0.0008;
+  sun.shadow.radius = 4;
+  scene.add(amb, sun, sun.target);
+
+  function gridCanvas() {
+    const c = document.createElement('canvas'); c.width = c.height = 500;
+    const g = c.getContext('2d');
+    g.fillStyle = cssVar('--mat'); g.fillRect(0, 0, 500, 500);
+    g.strokeStyle = cssVar('--grid-minor'); g.lineWidth = 2;
+    for (let i = 1; i < 5; i++) { g.beginPath(); g.moveTo(i * 100, 0); g.lineTo(i * 100, 500); g.moveTo(0, i * 100); g.lineTo(500, i * 100); g.stroke(); }
+    g.strokeStyle = cssVar('--grid-major'); g.lineWidth = 3;
+    g.beginPath(); for (const p of [0, 500]) { g.moveTo(p, 0); g.lineTo(p, 500); g.moveTo(0, p); g.lineTo(500, p); } g.stroke();
+    return c;
+  }
+  const matTex = new THREE.CanvasTexture(gridCanvas());
+  matTex.wrapS = matTex.wrapT = THREE.RepeatWrapping;
+  matTex.repeat.set(4000 / 50, 4000 / 50);
+  matTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const matMesh = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshLambertMaterial({ map: matTex }));
+  matMesh.receiveShadow = true;
+  matMesh.position.set(0, 0, 0);
+  scene.add(matMesh);
+
+  function grainTexture() {
+    const c = document.createElement('canvas'); c.width = c.height = 512;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, 512, 512);
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 9000; i++) {
+      const x = rnd() * 512, y = rnd() * 512, a = (rnd() - 0.5) * 0.9 + 0.3, l = 2 + rnd() * 8;
+      g.strokeStyle = `rgba(60,50,30,${0.02 + rnd() * 0.035})`; g.lineWidth = 0.6 + rnd() * 0.6;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+    }
+    for (let i = 0; i < 2500; i++) { g.fillStyle = `rgba(80,70,40,${rnd() * 0.05})`; g.fillRect(rnd() * 512, rnd() * 512, 1.2, 1.2); }
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return t;
+  }
+  const grain = grainTexture();
+  const mats = {
+    front: new THREE.MeshLambertMaterial({ map: grain, side: THREE.FrontSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 2 }),
+    back: new THREE.MeshLambertMaterial({ map: grain, side: THREE.BackSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 2 }),
+    edge: new THREE.LineBasicMaterial({ transparent: true, opacity: 0.3 }),
+    creaseF: new THREE.MeshBasicMaterial({ side: THREE.FrontSide, transparent: true, opacity: 0.85 }),
+    creaseB: new THREE.MeshBasicMaterial({ side: THREE.BackSide, transparent: true, opacity: 0.85 }),
+    marker: new THREE.MeshBasicMaterial({}),
+    drop: new THREE.LineDashedMaterial({ dashSize: 4, gapSize: 3, transparent: true, opacity: 0.8 })
+  };
+  function applyTheme() {
+    mats.front.color.set(cssVar('--paper'));
+    mats.back.color.set(cssVar('--paper-back'));
+    mats.edge.color.set(cssVar('--ink'));
+    mats.creaseF.color.set(cssVar('--crease'));
+    mats.creaseB.color.set(cssVar('--crease'));
+    mats.marker.color.set(cssVar('--fold'));
+    mats.drop.color.set(cssVar('--fold'));
+    matTex.image = gridCanvas(); matTex.needsUpdate = true;
+    renderer.setClearColor(cssVar('--mat'));
+    renderLook(); renderShowMe();
+    requestDraw();
+  }
+
+  const model = new THREE.Group(); model.matrixAutoUpdate = false; scene.add(model);
+  const markers = new THREE.Group(); scene.add(markers);
+  const comMarker = new THREE.Mesh(new THREE.SphereGeometry(3.2, 20, 14), mats.marker);
+  const dropGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]);
+  const comDrop = new THREE.Line(dropGeo, mats.drop);
+  markers.add(comMarker, comDrop); markers.visible = false;
+
+  let meshes = new Map();
+  function buildModel(s) {
+    for (const g of meshes.values()) { model.remove(g); g.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+    meshes = new Map();
+    for (const p of s.panels) {
+      const g = new THREE.Group(); g.matrixAutoUpdate = false;
+      const pos = [], uv = [], nrm = [];
+      for (let i = 1; i < p.poly.length - 1; i++) for (const q of [p.poly[0], p.poly[i], p.poly[i + 1]]) {
+        pos.push(q.x, q.y, 0); nrm.push(0, 0, 1); uv.push((q.x + 105) / 80, (q.y + 148.5) / 80);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      const f = new THREE.Mesh(geo, mats.front), b = new THREE.Mesh(geo, mats.back);
+      f.castShadow = b.castShadow = true; f.receiveShadow = b.receiveShadow = true;
+      g.add(f, b);
+      const ep = [];
+      for (let i = 0; i < p.poly.length; i++) { const a = p.poly[i], c = p.poly[(i + 1) % p.poly.length]; ep.push(a.x, a.y, 0, c.x, c.y, 0); }
+      const eg = new THREE.BufferGeometry(); eg.setAttribute('position', new THREE.Float32BufferAttribute(ep, 3));
+      g.add(new THREE.LineSegments(eg, mats.edge));
+      // scored creases: a thin ribbon on this panel's side of each 0° hinge, on both faces
+      const c = E.vec.centroid(p.poly), rib = [];
+      for (const h of s.hinges) {
+        if ((h.a !== p.id && h.b !== p.id) || Math.abs(h.angle) > 1e-6) continue;
+        const d = unit(sub(h.q, h.p)); let nn = perp(d); if (dot(sub(c, h.p), nn) < 0) nn = mul(nn, -1);
+        const w = mul(nn, 0.55), a0 = h.p, a1 = h.q, b0 = add(h.p, w), b1 = add(h.q, w);
+        for (const z of [0.07]) rib.push(a0.x, a0.y, z, a1.x, a1.y, z, b1.x, b1.y, z, a0.x, a0.y, z, b1.x, b1.y, z, b0.x, b0.y, z);
+      }
+      if (rib.length) {
+        const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(rib, 3));
+        const rf = new THREE.Mesh(rg, mats.creaseF);
+        const rb = new THREE.Mesh(rg.clone().translate(0, 0, -0.14), mats.creaseB);
+        g.add(rf, rb);
+      }
+      model.add(g); meshes.set(p.id, g);
+    }
+  }
+  const tmpM = new THREE.Matrix4();
+  function placeModel(s, T, offsets, pre) {
+    for (const p of s.panels) {
+      const g = meshes.get(p.id); if (!g) continue;
+      let M = T.get(p.id); if (pre) M = E.mat.mmul(pre, M);
+      const o = offsets.get(p.id) || 0;
+      g.matrix.set(M[0], M[1], M[2], M[3] + M[2] * o, M[4], M[5], M[6], M[7] + M[6] * o, M[8], M[9], M[10], M[11] + M[10] * o, 0, 0, 0, 1);
+      g.matrixWorldNeedsUpdate = true;
+    }
+    requestDraw();
+  }
+  const LIFT_M = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, LIFT];
+
+  // The committed flat model
+  let view = null;
+  function setView(s) {
+    const T = E.computeTransforms(s), ranks = E.computeRanks(s, T), signs = E.flatSigns(s, T);
+    const offsets = new Map();
+    let maxRank = 0;
+    for (const p of s.panels) { offsets.set(p.id, ranks.get(p.id) * LAYER * signs.get(p.id)); maxRank = Math.max(maxRank, ranks.get(p.id)); }
+    const ctx = E.context(s);
+    view = { s, T, ranks, signs, offsets, maxRank, ctx };
+    buildModel(s);
+    placeModel(s, T, offsets, LIFT_M);
+  }
+  // A plan shown part-way: offsets glide from the old stack to the new one
+  function preparePlanView(plan) {
+    const s1 = plan.state, T1 = E.computeTransforms(s1, E.planOverrides(plan, 1));
+    const r1 = E.computeRanks(Object.assign({}, s1, { order: plan.foldOrder }), T1);
+    const inv = new Map(); for (const [pid, mid] of plan.split) inv.set(mid, pid);
+    const oldOff = new Map(), newOff = new Map();
+    let maxRank = 0;
+    for (const p of s1.panels) {
+      const oid = inv.has(p.id) ? inv.get(p.id) : p.id;
+      oldOff.set(p.id, (view.ranks.get(oid) || 0) * LAYER * (view.signs.get(oid) || 1));
+      const sg = E.mat.mdir(T1.get(p.id), { x: 0, y: 0, z: 1 }).z >= 0 ? 1 : -1;
+      newOff.set(p.id, r1.get(p.id) * LAYER * sg);
+      maxRank = Math.max(maxRank, r1.get(p.id));
+    }
+    let ok = plan.ok, reason = plan.reason;
+    if (ok && plan.mode === 'fold' && maxRank + 1 > E.MAX_LAYERS) { ok = false; reason = `That would stack ${maxRank + 1} layers, too thick to fold.`; }
+    return { plan, s1, oldOff, newOff, ok, reason };
+  }
+  function showPlanAt(pv, f) {
+    const T = E.computeTransforms(pv.s1, E.planOverrides(pv.plan, f));
+    const off = new Map();
+    const g = clamp(f, 0, 1);
+    for (const p of pv.s1.panels) off.set(p.id, pv.oldOff.get(p.id) * (1 - g) + pv.newOff.get(p.id) * g);
+    placeModel(pv.s1, T, off, LIFT_M);
+  }
+
+  // ------------------------------------------------------------ camera
+  const cam = { yaw: 0, tilt: 0, zoom: 1, auto: 0, autoGoal: 0, off: { x: 0, y: 0 }, offGoal: { x: 0, y: 0 }, target: new THREE.Vector3(0, 0, 0), goal: new THREE.Vector3(0, 0, 0), dist: 900, distGoal: 900, extent: { w: 210, h: 297 } };
+  let W = 1, H = 1;
+  function fitCamera(instant) {
+    let w, h, cx, cy;
+    if (app.tab === 'shape' && app.shape.bounds) { const b = app.shape.bounds; w = b.w; h = b.h; cx = b.cx; cy = b.cy; }
+    else {
+      const b = view.ctx.bb; w = b.x1 - b.x0; h = b.y1 - b.y0; cx = (b.x0 + b.x1) / 2; cy = (b.y0 + b.y1) / 2;
+      w = Math.max(w, 150); h = Math.max(h, 190);
+    }
+    // fit into the part of the stage that the floating cards leave free
+    const ins = { l: 0, r: 0, t: 0, b: 0 }, sr = stage.getBoundingClientRect(), narrow = W < 720;
+    for (const el of [$('#guide'), $('#look'), $('#shape-panel')]) {
+      if (el.hidden) continue;
+      const r = el.getBoundingClientRect();
+      if (!r.width) continue;
+      if (narrow || W - (r.width + 24) < 460) {
+        if (r.top - sr.top < sr.height / 2) ins.t = Math.max(ins.t, r.bottom - sr.top + 6); else ins.b = Math.max(ins.b, sr.bottom - r.top + 6);
+      } else if (r.left - sr.left < sr.width / 2) ins.l = Math.max(ins.l, r.right - sr.left + 6);
+      else ins.r = Math.max(ins.r, sr.right - r.left + 6);
+    }
+    const aw = Math.max(120, W - ins.l - ins.r), ah = Math.max(160, H - ins.t - ins.b);
+    const margin = narrow ? 1.12 : 1.22;
+    const worldH = Math.max(h * H / ah, w * H / aw) * margin;
+    cam.distGoal = worldH / 2 / Math.tan(15 * DEG);
+    cam.offGoal = { x: ins.l + aw / 2 - W / 2, y: ins.t + ah / 2 - H / 2 };
+    cam.goal.set(cx, cy, app.tab === 'shape' ? app.shape.hover || 0 : LIFT);
+    if (instant) { cam.dist = cam.distGoal; cam.target.copy(cam.goal); cam.off = Object.assign({}, cam.offGoal); }
+    requestDraw();
+  }
+  function updateCamera() {
+    const autoT = Math.max(cam.tilt, 25 * DEG);
+    const tilt = cam.tilt + (autoT - cam.tilt) * cam.auto;
+    const hx = -Math.sin(cam.yaw), hy = Math.cos(cam.yaw);
+    const d = cam.dist * cam.zoom;
+    camera.position.set(cam.target.x - d * Math.sin(tilt) * hx, cam.target.y - d * Math.sin(tilt) * hy, cam.target.z + d * Math.cos(tilt));
+    camera.up.set(hx, hy, 0);
+    camera.lookAt(cam.target);
+    camera.setViewOffset(W, H, -cam.off.x, -cam.off.y, W, H);
+    camera.updateMatrixWorld();
+    sun.position.set(cam.target.x - 300, cam.target.y + 360, cam.target.z + 700);
+    sun.target.position.copy(cam.target); sun.target.updateMatrixWorld();
+  }
+  function setTopView() { tweenCam(0, 0); }
+  function tweenCam(tilt, yaw) {
+    const t0 = cam.tilt, y0 = cam.yaw;
+    let dy = yaw - y0; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI;
+    tween(450, f => { cam.tilt = t0 + (tilt - t0) * f; cam.yaw = y0 + dy * f; }, null, ease.inOut);
+  }
+
+  // ------------------------------------------------------------ loop & tweens
+  let needsDraw = true;
+  const tweens = [];
+  function requestDraw() { needsDraw = true; }
+  function tween(ms, fn, done, e) {
+    if (reduced() || ms <= 0) { fn(1); if (done) done(); requestDraw(); return; }
+    tweens.push({ t0: performance.now(), ms, fn, done, e: e || ease.out });
+  }
+  function frame(now) {
+    requestAnimationFrame(frame);
+    let busy = false;
+    for (let i = tweens.length - 1; i >= 0; i--) {
+      const tw = tweens[i], k = clamp((now - tw.t0) / tw.ms, 0, 1);
+      tw.fn(tw.e(k)); busy = true;
+      if (k >= 1) { tweens.splice(i, 1); if (tw.done) tw.done(); }
+    }
+    const k = reduced() ? 1 : 0.16;
+    if (cam.target.distanceTo(cam.goal) > 0.05) { cam.target.lerp(cam.goal, k); busy = true; }
+    if (Math.abs(cam.dist - cam.distGoal) > 0.1) { cam.dist += (cam.distGoal - cam.dist) * k; busy = true; }
+    if (Math.abs(cam.off.x - cam.offGoal.x) + Math.abs(cam.off.y - cam.offGoal.y) > 0.3) { cam.off.x += (cam.offGoal.x - cam.off.x) * k; cam.off.y += (cam.offGoal.y - cam.off.y) * k; busy = true; }
+    if (Math.abs(cam.auto - cam.autoGoal) > 0.002) { cam.auto += (cam.autoGoal - cam.auto) * (reduced() ? 1 : 0.12); busy = true; }
+    if (app.drag && app.drag.invalid && app.drag.pv) { shakeTick(now); busy = true; }
+    if (app.pulses.length || (app.ghost && now - app.ghost.t0 < 800) || app.flash || app.shake || guideTarget) busy = true;
+    if (!busy && !needsDraw) return;
+    needsDraw = false;
+    updateCamera();
+    renderer.render(scene, camera);
+    drawOverlay(now);
+  }
+
+  // ------------------------------------------------------------ projection helpers
+  const _v = new THREE.Vector3();
+  function toScreen(x, y, z) {
+    _v.set(x, y, z).project(camera);
+    return { x: (_v.x + 1) / 2 * W, y: (1 - _v.y) / 2 * H };
+  }
+  const topZ = () => LIFT + (view ? view.maxRank * LAYER : 0) + 0.2;
+  const ws = (p, z) => toScreen(p.x, p.y, z == null ? topZ() : z);
+  const ray = new THREE.Raycaster(), _ndc = new THREE.Vector2();
+  function worldAt(e, z) {
+    const r = ov.getBoundingClientRect();
+    _ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    updateCamera();
+    ray.setFromCamera(_ndc, camera);
+    const o = ray.ray.origin, d = ray.ray.direction, zz = z == null ? topZ() : z;
+    if (Math.abs(d.z) < 1e-6) return null;
+    const t = (zz - o.z) / d.z;
+    return v(o.x + d.x * t, o.y + d.y * t);
+  }
+  function pxPerMm(p) { const a = ws(p), b = ws(add(p, v(10, 0))), c = ws(add(p, v(0, 10))); return Math.max(dist(a, b), dist(a, c)) / 10; }
+  function localXY(e) { const r = ov.getBoundingClientRect(); return v(e.clientX - r.left, e.clientY - r.top); }
+
+  // ------------------------------------------------------------ candidates (cached per state, mode, guide step)
+  const candCache = new Map();
+  function candKey(h) { return `${app.version}|${h.idx}|${app.mode}|${app.guide.on ? app.guide.step : '-'}`; }
+  function getCands(h) {
+    const k = candKey(h);
+    if (candCache.has(k)) return candCache.get(k);
+    const part = currentPart();
+    const want = part ? (c => c.ok && partDone(part, c.plan.state) && !partDone(part, app.state)) : null;
+    let c = E.getCandidates(app.state, h, { mode: app.mode, mustInclude: want });
+    // in the guide, don't let other landing points on the same drag path compete with the guided one
+    const g = want && c.find(want);
+    if (g) {
+      const dg = unit(sub(g.B, g.A));
+      c = c.filter(o => o === g || dot(unit(sub(o.B, o.A)), dg) < Math.cos(4 * DEG));
+    }
+    candCache.set(k, c);
+    return c;
+  }
+  const handles = () => view.ctx.handles;
+
+  // ------------------------------------------------------------ status line
+  const statusEl = $('#status');
+  let statusTimer = 0;
+  function setStatus(text, tone, actions, holdMs) {
+    statusEl.textContent = '';
+    statusEl.className = tone === 'error' ? 'error' : '';
+    const span = document.createElement('span'); span.textContent = text; statusEl.appendChild(span);
+    for (const a of actions || []) {
+      const b = document.createElement('button'); b.className = 'act'; b.textContent = a.label; b.onclick = a.run; statusEl.appendChild(b);
+    }
+    clearTimeout(statusTimer);
+    if (holdMs) { statusEl.dataset.hold = '1'; statusTimer = setTimeout(() => { delete statusEl.dataset.hold; idleStatus(); }, holdMs); }
+    else delete statusEl.dataset.hold;
+  }
+  function idleStatus(force) {
+    if (statusEl.dataset.hold && !force) return;
+    if (app.tab === 'shape') return;
+    const touch = app.isTouch;
+    const acts = app.wingMatch ? [{ label: 'Match the other wing', run: matchWing }] : [];
+    if (app.selCrease) return setStatus('Crease selected. Drag the paper on either side of it to fold along it.', null, acts);
+    const h = app.hover;
+    if (h) {
+      const n = getCands(h).length;
+      const verb = app.mode === 'crease' ? 'crease' : 'fold';
+      return setStatus(n ? `${h.label}: ${n} way${n > 1 ? 's' : ''} to ${verb} from here. ${touch ? 'Drag' : 'Drag it'} toward a dashed line.` : `${h.label}: nothing folds cleanly from here. Try another corner.`, null, acts);
+    }
+    if (app.mode === 'crease') return setStatus(`${touch ? 'Drag' : 'Hover'} a corner to crease. The paper springs back and leaves a line to fold along later.`, null, acts);
+    setStatus(touch ? 'Touch and drag a corner to fold it. Two fingers turn the view.' : 'Hover a corner to see where it can fold, then drag it. Right-drag turns the view.', null, acts);
+  }
+
+  // ------------------------------------------------------------ guide (classic dart)
+  const NOSE = [0, 148.5], K = 148.5 - 105 * (1 + Math.SQRT2);
+  const GUIDE = [
+    { title: 'Crease it in half', text: 'Drag the top-left corner over to the top-right corner. Press it flat and let go: in Crease mode it springs back and leaves a center line.', mode: 'crease',
+      parts: [{ line: [[0, -148.5], [0, 148.5]], crease: true, near: [-105, 148.5] }] },
+    { title: 'Corners to the crease', text: 'Fold each top corner down so the top edge lies along the center crease. Pick “Edge to the crease”.', mode: 'fold',
+      parts: [{ line: [NOSE, [-105, 43.5]], near: [-105, 148.5] }, { line: [NOSE, [105, 43.5]], near: [105, 148.5] }] },
+    { title: 'Edges to the crease again', text: 'Now fold each new slanted edge onto the center crease. The nose gets sharper.', mode: 'fold',
+      parts: [{ line: [NOSE, [-105, K]], near: [-105, 43.5] }, { line: [NOSE, [105, K]], near: [105, 43.5] }] },
+    { title: 'Fold it in half', text: 'Fold the whole thing in half along the center crease, so the folded flaps end up inside.', mode: 'fold',
+      parts: [{ line: [[0, -148.5], [0, 148.5]], near: [-105, -148.5] }] },
+    { title: 'Fold the wings down', text: 'Fold the top wing down along a line parallel to the spine (“Wing fold”). Then fold the other wing to match: use the button below, or flip over and fold it the same way.', mode: 'fold',
+      parts: [{ wing: 'any', prefer: 'wing' }, { wing: 'both', prefer: 'wing' }] },
+    { title: 'Open the wings', text: 'Switch to the Shape tab and drag the dihedral slider to open the wings into a slight V.', shape: true, parts: [] }
+  ];
+  function partDone(part, s) {
+    for (const h of s.hinges) {
+      if (dist(h.p, h.q) < 5) continue;
+      if (part.wing) continue;
+      const want = part.crease ? Math.abs(h.angle) < 1e-6 : Math.abs(Math.abs(h.angle) - Math.PI) < 1e-6;
+      if (!want) continue;
+      const a = v(part.line[0][0], part.line[0][1]), b = v(part.line[1][0], part.line[1][1]);
+      const nn = unit(perp(sub(b, a)));
+      if (Math.abs(dot(sub(h.p, a), nn)) < 1.2 && Math.abs(dot(sub(h.q, a), nn)) < 1.2) return true;
+    }
+    if (part.wing) {
+      const sides = new Set();
+      for (const h of s.hinges) {
+        if (Math.abs(Math.abs(h.angle) - Math.PI) > 1e-6) continue;
+        if (Math.abs(h.p.x - h.q.x) > 1 || Math.abs(h.p.y - h.q.y) < 20) continue;
+        const x = Math.abs(h.p.x);
+        if (x > 12 && x < 85) sides.add(Math.sign(h.p.x));
+      }
+      if (part.wing === 'both') return sides.size === 2 && E.wingsOpenBothWays(s);
+      return sides.size >= 1;
+    }
+    return false;
+  }
+  function currentPart() {
+    if (!app.guide.on) return null;
+    const st = GUIDE[app.guide.step];
+    if (!st || !st.parts) return null;
+    return st.parts.find(p => !partDone(p, app.state)) || null;
+  }
+  let guideTarget = null; // {h, c}
+  function computeGuideTarget() {
+    guideTarget = null;
+    const part = currentPart();
+    if (!part || app.tab !== 'fold') return;
+    const near = part.near ? v(part.near[0], part.near[1]) : v(0, -1000);
+    const hs = handles().slice().sort((a, b) => dist(a.pos, near) - dist(b.pos, near));
+    for (const pass of part.prefer ? [true, false] : [false]) for (const h of hs) {
+      const c = getCands(h).find(c => c.ok && partDone(part, c.plan.state) && (!pass || c.type === part.prefer));
+      if (c) { guideTarget = { h, c }; return; }
+    }
+  }
+  function renderGuide() {
+    renderGuideCard();
+    if (view) fitCamera();
+  }
+  function renderGuideCard() {
+    const el = $('#guide');
+    el.hidden = !app.guide.on;
+    $('#btn-guide').setAttribute('aria-pressed', String(app.guide.on));
+    if (!app.guide.on) return;
+    const i = app.guide.step, st = GUIDE[i];
+    const dots = $('#guide-dots'); dots.innerHTML = '';
+    GUIDE.forEach((_, k) => { const d = document.createElement('i'); if (k < i) d.className = 'done'; if (k === i) d.className = 'now'; dots.appendChild(d); });
+    if (!st) {
+      $('#guide-eyebrow').textContent = 'Build a classic dart · done';
+      $('#guide-title').textContent = 'Your dart is ready to fly';
+      $('#guide-text').textContent = 'Nice work. Try different dihedral angles, or fold your own design in free mode.';
+      $('#guide-next').hidden = false; $('#guide-next').textContent = 'Fold another';
+      $('#guide-skip').textContent = 'Free folding';
+      $('#guide-nudge').hidden = true;
+      return;
+    }
+    $('#guide-eyebrow').textContent = `Build a classic dart · step ${i + 1} of ${GUIDE.length}`;
+    $('#guide-title').textContent = st.title;
+    $('#guide-text').textContent = st.text;
+    $('#guide-skip').textContent = 'Skip to free folding';
+    $('#guide-next').hidden = !st.shape || app.tab === 'shape';
+    $('#guide-next').textContent = 'Open the Shape tab';
+    $('#guide-nudge').hidden = !app.guide.nudge; $('#guide-nudge').textContent = app.guide.nudge;
+  }
+  function guideAfterCommit(madeProgress) {
+    if (!app.guide.on) return;
+    const st = GUIDE[app.guide.step];
+    if (!st || !st.parts.length) return;
+    const allDone = st.parts.every(p => partDone(p, app.state));
+    if (allDone) {
+      app.guide.step++;
+      app.guide.nudge = '';
+      const nx = GUIDE[app.guide.step];
+      if (nx && nx.mode) setMode(nx.mode);
+      setStatus(nx ? `Nice. Next: ${nx.title.toLowerCase()}.` : 'Done!', null, null, 2600);
+    } else if (!madeProgress) {
+      app.guide.nudge = 'That fold is different from the guide. Undo to try again, or skip to free folding.';
+    } else app.guide.nudge = '';
+    renderGuide();
+  }
+  function guideProgressBefore() { const st = GUIDE[app.guide.step]; return st && st.parts ? st.parts.filter(p => partDone(p, app.state)).length : 0; }
+
+  // ------------------------------------------------------------ commit / undo
+  function commit(ns, info) {
+    info = info || {};
+    const before = app.guide.on ? guideProgressBefore() : 0;
+    app.history.push({ state: app.state, ghost: app.ghost, guide: Object.assign({}, app.guide), wingMatch: app.wingMatch });
+    app.state = ns; app.version++;
+    app.selCrease = null; app.hover = null; app.focusIdx = -1;
+    setView(ns);
+    if (info.group != null) {
+      const T = view.T, segs = [];
+      for (const h of ns.hinges) if (h.group === info.group) segs.push([E.mat.mapp(T.get(h.a), h.p), E.mat.mapp(T.get(h.a), h.q)]);
+      if (info.mode === 'fold') app.ghost = { segs, t0: performance.now() };
+      if (info.mode === 'crease') {
+        const now = performance.now();
+        for (const [a, b] of segs) for (const p of [a, b]) if (handles().some(H => dist(H.pos, p) < 0.6)) app.pulses.push({ pos: v(p.x, p.y), t0: now });
+      }
+    }
+    app.wingMatch = info.wingMatch || null;
+    fitCamera();
+    if (app.guide.on) {
+      const after = guideProgressBefore();
+      guideAfterCommit(after > before || info.flip);
+    }
+    computeGuideTarget();
+    updateToolbar();
+    if (!statusEl.dataset.hold) idleStatus(true);
+  }
+  function undo() {
+    if (app.busy || app.drag || !app.history.length) return;
+    const h = app.history.pop();
+    app.state = h.state; app.ghost = h.ghost; app.guide = h.guide; app.wingMatch = h.wingMatch; app.version++;
+    app.selCrease = null; app.hover = null;
+    setView(app.state); fitCamera(); renderGuide(); computeGuideTarget(); updateToolbar();
+    setStatus('Undone.', null, null, 1400);
+  }
+  function resetSheet(keepGuide) {
+    if (app.busy || app.drag) return;
+    app.history.push({ state: app.state, ghost: app.ghost, guide: Object.assign({}, app.guide), wingMatch: app.wingMatch });
+    app.state = E.createSheet(); app.version++; app.ghost = null; app.wingMatch = null; app.selCrease = null;
+    if (!keepGuide) app.guide.step = 0;
+    app.guide.nudge = '';
+    if (app.guide.on) setMode(GUIDE[0].mode);
+    setView(app.state); fitCamera(); renderGuide(); computeGuideTarget(); updateToolbar(); idleStatus(true);
+  }
+
+  // ------------------------------------------------------------ performing folds
+  function vibrate(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* not supported */ } }
+  function finishPlan(pv, fromF, cand) {
+    app.busy = true;
+    const plan = pv.plan;
+    const wing = cand && cand.type === 'wing' && plan.mode === 'fold' && plan.dir > 0 ? { line: plan.line, A: cand.A } : null;
+    if (plan.mode === 'fold') {
+      tween(130 * (1 - fromF) + 40, f => showPlanAt(pv, fromF + (1 - fromF) * f), () => {
+        app.busy = false; cam.autoGoal = 0;
+        commit(plan.state, { group: plan.group, mode: 'fold', wingMatch: wing });
+      }, ease.out);
+    } else {
+      // crease: it was pressed flat; now it springs back open and leaves the line
+      tween(520, f => showPlanAt(pv, fromF * (1 - ease.spring(f))), () => {
+        app.busy = false; cam.autoGoal = 0;
+        commit(plan.state, { group: plan.group, mode: 'crease' });
+      }, t => t);
+    }
+  }
+  function springBack(pv, fromF, then) {
+    app.busy = true;
+    tween(380, f => { if (pv) showPlanAt(pv, fromF * (1 - ease.spring(f))); }, () => {
+      app.busy = false; cam.autoGoal = 0;
+      setView(app.state); if (then) then();
+    }, t => t);
+  }
+  function performCandidate(c) {
+    if (app.busy || !c) return;
+    const pv = preparePlanView(c.plan);
+    if (!pv.ok) { rejectShake(pv, pv.reason); return; }
+    buildModel(pv.s1); showPlanAt(pv, 0);
+    cam.autoGoal = 1; app.busy = true;
+    setStatus(`${c.say}.`, null);
+    tween(700, f => showPlanAt(pv, f), () => {
+      app.busy = false; flashLine(c.plan.line); vibrate(12);
+      finishPlan(pv, 1, c);
+    }, ease.inOut);
+  }
+  function rejectShake(pv, reason) {
+    setStatus(reason || "That fold won't work.", 'error', null, 3200);
+    app.shake = { t0: performance.now() };
+    if (pv && pv.plan && pv.plan.state) {
+      buildModel(pv.s1);
+      app.busy = true;
+      tween(520, f => showPlanAt(pv, 0.07 * Math.sin(f * Math.PI * 6) * (1 - f) + 0.04 * Math.sin(f * Math.PI)), () => { app.busy = false; app.shake = null; setView(app.state); }, t => t);
+    } else setTimeout(() => { app.shake = null; requestDraw(); }, 500);
+  }
+  function shakeTick(now) {
+    const d = app.drag;
+    showPlanAt(d.pv, Math.min(d.t || 0, 0.12) * 0.9 + 0.035 * Math.sin(now / 28));
+  }
+  function flashLine(line) { if (!view) return; app.flash = { line, t0: performance.now() }; setTimeout(() => { app.flash = null; requestDraw(); }, 420); }
+  function matchWing() {
+    const wm = app.wingMatch;
+    if (!wm || app.busy) return;
+    const plan = E.planFold(app.state, wm.line, { grab: wm.A, dir: -1, mode: 'fold', kind: 'wing', label: 'Matching wing' });
+    if (!plan.ok) { setStatus(plan.reason, 'error', null, 3000); return; }
+    app.wingMatch = null;
+    performCandidate({ plan, say: 'Folding the other wing to match', type: 'wing-match', A: wm.A });
+  }
+
+  // ------------------------------------------------------------ flip over
+  function flipOver() {
+    if (app.busy || app.drag) return;
+    const s = app.state, b = view.ctx.bb, cx = (b.x0 + b.x1) / 2, cz = LIFT + view.maxRank * LAYER / 2;
+    app.busy = true;
+    tween(560, f => {
+      const R = E.mat.mrot3({ x: cx, y: 0, z: cz }, { x: 0, y: 1, z: 0 }, Math.PI * f);
+      const lift = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, LIFT + Math.sin(Math.PI * f) * 40];
+      placeModel(s, view.T, view.offsets, E.mat.mmul(lift, E.mat.mmul(R, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0])));
+    }, () => {
+      app.busy = false;
+      commit(E.flip(s), { flip: true });
+      setStatus('Flipped over. The other side is up.', null, null, 1800);
+    }, ease.inOut);
+  }
+
+  // ------------------------------------------------------------ pointer input
+  const pointers = new Map();
+  let orbit = null, pinch = null;
+  ov.addEventListener('contextmenu', e => e.preventDefault());
+  ov.addEventListener('pointerdown', e => {
+    app.isTouch = e.pointerType === 'touch';
+    pointers.set(e.pointerId, localXY(e));
+    try { ov.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    if (pointers.size === 2) {
+      // second finger: cancel any fold in progress and orbit/zoom instead
+      if (app.drag) cancelDrag();
+      const [a, b] = [...pointers.values()];
+      pinch = { d: dist(a, b), zoom: cam.zoom, mid: lerp(a, b, 0.5), yaw: cam.yaw, tilt: cam.tilt };
+      orbit = null; return;
+    }
+    if (e.button === 2 || e.button === 1) { orbit = { x: e.clientX, y: e.clientY, yaw: cam.yaw, tilt: cam.tilt }; return; }
+    if (app.busy) return;
+    if (app.tab === 'shape') { orbit = { x: e.clientX, y: e.clientY, yaw: cam.yaw, tilt: cam.tilt }; return; }
+    const sp = localXY(e);
+    const h = hitHandle(sp);
+    if (h) { startHandleDrag(h, e); return; }
+    const p = worldAt(e);
+    if (p) {
+      const hit = E.hitCrease(app.state, p, 12 / pxPerMm(p));
+      if (hit) {
+        app.selCrease = app.selCrease && dist(app.selCrease.a, hit.a) < 0.1 && dist(app.selCrease.b, hit.b) < 0.1 ? null : hit;
+        idleStatus(true); requestDraw(); return;
+      }
+      if (app.selCrease && E.topPanelAt(app.state, p)) { startCreaseDrag(p, e); return; }
+    }
+    if (app.selCrease) { app.selCrease = null; idleStatus(true); requestDraw(); }
+    orbit = { x: e.clientX, y: e.clientY, yaw: cam.yaw, tilt: cam.tilt, soft: true };
+  });
+  ov.addEventListener('pointermove', e => {
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, localXY(e));
+    if (pinch && pointers.size >= 2) {
+      const [a, b] = [...pointers.values()], m = lerp(a, b, 0.5);
+      cam.zoom = clamp(pinch.zoom * pinch.d / Math.max(20, dist(a, b)), 0.3, 3);
+      cam.yaw = pinch.yaw - (m.x - pinch.mid.x) * 0.006;
+      cam.tilt = clamp(pinch.tilt + (m.y - pinch.mid.y) * 0.006, 0, 1.4);
+      requestDraw(); return;
+    }
+    if (orbit) {
+      cam.yaw = orbit.yaw - (e.clientX - orbit.x) * 0.006;
+      cam.tilt = clamp(orbit.tilt + (e.clientY - orbit.y) * 0.006, 0, 1.4);
+      requestDraw(); return;
+    }
+    if (app.drag) { moveDrag(e); return; }
+    if (app.tab !== 'fold' || app.busy || e.pointerType === 'touch') return;
+    const h = hitHandle(localXY(e));
+    if (h !== app.hover) { app.hover = h; app.candSel = 0; ov.style.cursor = h ? 'grab' : 'default'; idleStatus(); requestDraw(); }
+    if (!h) {
+      const p = worldAt(e);
+      const overCrease = p && E.hitCrease(app.state, p, 12 / pxPerMm(p));
+      ov.style.cursor = overCrease ? 'pointer' : (app.selCrease && p && E.topPanelAt(app.state, p) ? 'grab' : 'default');
+    }
+  });
+  const endPointer = e => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+    if (orbit && pointers.size === 0) orbit = null;
+    if (app.drag && app.drag.pointerId === e.pointerId) endDrag(e.type === 'pointercancel');
+  };
+  ov.addEventListener('pointerup', endPointer);
+  ov.addEventListener('pointercancel', endPointer);
+  ov.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && !app.drag && app.hover) { app.hover = null; idleStatus(); requestDraw(); } });
+  ov.addEventListener('wheel', e => { e.preventDefault(); cam.zoom = clamp(cam.zoom * Math.exp(e.deltaY * 0.0012), 0.3, 3); requestDraw(); }, { passive: false });
+
+  function hitHandle(sp) {
+    if (app.tab !== 'fold' || !view) return null;
+    const r = app.isTouch ? 28 : 16;
+    let best = null, bd = r;
+    for (const h of handles()) { const d = dist(ws(h.pos), sp); if (d < bd) { bd = d; best = h; } }
+    return best;
+  }
+  function startHandleDrag(h, e) {
+    const cands = getCands(h);
+    app.hover = h;
+    app.drag = { kind: 'handle', h, A: h.pos, cands, cur: -1, t: 0, f: 0, snapped: false, pv: null, pointerId: e.pointerId, start: localXY(e), moved: false };
+    ov.style.cursor = 'grabbing';
+    cam.autoGoal = 1;
+    if (!cands.length) setStatus(`${h.label}: nothing folds cleanly from here. Try another corner.`);
+    else setStatus(app.mode === 'crease' ? 'Drag toward a dashed line, press it flat, then let go to leave a crease.' : 'Drag toward one of the dashed lines.');
+    requestDraw();
+  }
+  function startCreaseDrag(p, e) {
+    const C = app.selCrease;
+    const plan = E.creasePlan(app.state, C, p, { mode: app.mode, dir: 1, allLayers: app.mode === 'crease' });
+    if (!plan.ok && !plan.budget) { rejectShake(null, plan.reason); return; }
+    const nn = unit(perp(sub(C.b, C.a)));
+    const dd = dot(sub(p, C.a), nn), foot = sub(p, mul(nn, dd));
+    const A = add(foot, mul(nn, Math.sign(dd) * Math.max(Math.abs(dd), 40)));
+    const B = sub(foot, mul(nn, Math.sign(dd) * Math.max(Math.abs(dd), 40)));
+    const cand = { A, B, line: plan.line, type: 'crease', label: 'Along this crease', say: 'Fold along the crease', plan, ok: plan.ok, reason: plan.reason, chord: [C.a, C.b] };
+    app.drag = { kind: 'crease', h: null, A, cands: [cand], cur: -1, t: 0, f: 0, snapped: false, pv: null, pointerId: e.pointerId, start: localXY(e), moved: false, grabWorld: p };
+    cam.autoGoal = 1;
+    ov.style.cursor = 'grabbing';
+  }
+  function setDragCandidate(i) {
+    const d = app.drag;
+    d.cur = i; d.snapped = false;
+    if (i < 0) { d.pv = null; setView(app.state); return; }
+    const c = d.cands[i];
+    d.pv = preparePlanView(c.plan);
+    d.invalid = d.pv.ok ? null : d.pv.reason;
+    buildModel(d.pv.s1);
+  }
+  function moveDrag(e) {
+    const d = app.drag, sp = localXY(e);
+    if (!d.moved && dist(sp, d.start) < 6) return;
+    d.moved = true;
+    const C = d.kind === 'crease' ? add(d.A, sub(worldAt(e), d.grabWorld)) : worldAt(e);
+    if (!C || !d.cands.length) return;
+    // which candidate line does the hand move toward? nearest to the corner's travel path A→B
+    let best = -1, bd = Infinity, dCur = Infinity;
+    // collinear choices: the nearer landing point wins until the hand clearly passes it
+    const order = d.cands.map((c, i) => i).sort((i, j) => dist(d.cands[i].A, d.cands[i].B) - dist(d.cands[j].A, d.cands[j].B));
+    for (const i of order) {
+      const c = d.cands[i], AB = sub(c.B, c.A), L = len(AB), t = dot(sub(C, c.A), AB) / (L * L);
+      let dd = Math.abs(cross(unit(AB), sub(C, c.A)));
+      if (t > 1.15) dd += (t - 1.15) * L;
+      if (t < 0) dd += -t * L + (t < -0.05 ? 1000 : 0);
+      if (i === d.cur) dCur = dd;
+      if (dd < bd - 0.01) { bd = dd; best = i; }
+    }
+    if (d.cur >= 0 && best !== d.cur && !(bd < dCur * 0.7 - 1)) best = d.cur;
+    if (d.kind === 'crease') best = 0;
+    if (best !== d.cur) setDragCandidate(best);
+    const c = d.cands[d.cur];
+    const AB = sub(c.B, c.A);
+    d.t = clamp(dot(sub(C, c.A), AB) / dot(AB, AB), 0, 1);
+    if (d.invalid) {
+      setStatus(d.invalid, 'error');
+      requestDraw(); return;
+    }
+    if (!d.snapped && d.t > 0.86) {
+      d.snapped = true; vibrate(12); flashLine(c.plan.line);
+      const f0 = d.f;
+      tween(150, k => { if (app.drag === d && d.snapped) { d.f = f0 + (1 - f0) * k; showPlanAt(d.pv, d.f); } }, null, ease.out);
+    } else if (d.snapped && d.t < 0.7) d.snapped = false;
+    if (!d.snapped) { d.f = Math.acos(1 - 2 * d.t) / Math.PI; showPlanAt(d.pv, d.f); }
+    const say = c.say;
+    if (app.mode === 'crease' || c.plan.mode === 'crease') setStatus(d.snapped ? `${say}. Let go: it springs back as a crease.` : `${say}. Keep going until it presses flat.`);
+    else setStatus(d.snapped ? `${say}. Let go to press the fold.` : `${say}. Keep going until it snaps flat.`);
+    requestDraw();
+  }
+  function endDrag(cancelled) {
+    const d = app.drag; app.drag = null;
+    ov.style.cursor = 'default';
+    if (!d.pv) {
+      cam.autoGoal = 0; setView(app.state);
+      if (d.kind === 'handle' && !d.moved) { app.hover = d.h; app.candSel = 0; idleStatus(true); } // a tap keeps the lines visible
+      else idleStatus(true);
+      requestDraw(); return;
+    }
+    if (d.invalid) { springBack(d.pv, Math.min(d.t, 0.12)); rejectShake(null, d.invalid); return; }
+    if (d.snapped && !cancelled) finishPlan(d.pv, d.f, d.cands[d.cur]);
+    else { springBack(d.pv, d.f, () => idleStatus(true)); setStatus('It sprang back. Drag all the way until it snaps flat.', null, null, 1800); }
+  }
+  function cancelDrag() { if (!app.drag) return; const d = app.drag; app.drag = null; springBack(d.pv, d.f); }
+
+  // ------------------------------------------------------------ keyboard
+  ov.addEventListener('keydown', e => {
+    if (app.tab !== 'fold') return;
+    const hs = handles();
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (!hs.length) return;
+      app.focusIdx = (app.focusIdx + (e.key === 'ArrowRight' ? 1 : hs.length - 1) + (app.focusIdx < 0 && e.key === 'ArrowRight' ? 0 : 0)) % hs.length;
+      if (app.focusIdx < 0) app.focusIdx = 0;
+      app.hover = hs[app.focusIdx]; app.candSel = 0;
+      const n = getCands(app.hover).length;
+      setStatus(`${app.hover.label} ${app.focusIdx + 1} of ${hs.length}. ${n ? `Up and down pick a fold line (${n}); Enter folds.` : 'Nothing folds cleanly from here.'}`);
+      requestDraw();
+    } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && app.hover) {
+      e.preventDefault();
+      const cs = getCands(app.hover); if (!cs.length) return;
+      app.candSel = (app.candSel + (e.key === 'ArrowDown' ? 1 : cs.length - 1)) % cs.length;
+      const c = cs[app.candSel];
+      setStatus(`${c.label}${c.ok ? '' : ` (${c.reason})`}. ${app.candSel + 1} of ${cs.length}. Press Enter to ${app.mode}.`);
+      requestDraw();
+    } else if ((e.key === 'Enter' || e.key === ' ') && app.hover) {
+      e.preventDefault();
+      const c = getCands(app.hover)[app.candSel];
+      if (c) { if (!c.ok) rejectShake(preparePlanView(c.plan), c.reason); else performCandidate(c); }
+    } else if (e.key === 'Escape') { app.hover = null; app.selCrease = null; app.focusIdx = -1; idleStatus(true); requestDraw(); }
+  });
+  document.addEventListener('keydown', e => {
+    if (e.target.matches && e.target.matches('input, select, textarea')) return;
+    if ((e.key === 'z' || e.key === 'Z') && !e.altKey) { e.preventDefault(); undo(); }
+    else if ((e.key === 'c' || e.key === 'C') && !e.metaKey && !e.ctrlKey) setMode('crease');
+    else if ((e.key === 'f' || e.key === 'F') && !e.metaKey && !e.ctrlKey) setMode('fold');
+    else if (e.key === 'Escape' && !$('#showme').hidden) closeShowMe();
+  });
+
+  // ------------------------------------------------------------ overlay drawing
+  function pill(x, y, text, opts) {
+    opts = opts || {};
+    octx.font = `600 ${opts.size || 12.5}px "Bricolage Grotesque", system-ui, sans-serif`;
+    const w = octx.measureText(text).width + 16, h = (opts.size || 12.5) + 11;
+    const r = { x: x - w / 2, y: y - h / 2, w, h };
+    octx.save();
+    octx.shadowColor = 'rgba(0,0,0,.18)'; octx.shadowBlur = 6; octx.shadowOffsetY = 1;
+    octx.fillStyle = opts.bg || cssVar('--surface-solid');
+    roundRect(r.x, r.y, w, h, h / 2); octx.fill();
+    octx.restore();
+    if (opts.stroke) { octx.strokeStyle = opts.stroke; octx.lineWidth = 1.5; roundRect(r.x, r.y, w, h, h / 2); octx.stroke(); }
+    octx.fillStyle = opts.color || cssVar('--ink'); octx.textAlign = 'center'; octx.textBaseline = 'middle';
+    octx.fillText(text, x, y + 0.5);
+    return r;
+  }
+  function roundRect(x, y, w, h, r) { octx.beginPath(); octx.moveTo(x + r, y); octx.arcTo(x + w, y, x + w, y + h, r); octx.arcTo(x + w, y + h, x, y + h, r); octx.arcTo(x, y + h, x, y, r); octx.arcTo(x, y, x + w, y, r); octx.closePath(); }
+  const hit = (a, b) => !(a.x + a.w < b.x || b.x + b.w < a.x || a.y + a.h < b.y || b.y + b.h < a.y);
+  function seg(a, b, color, width, dash, alpha) {
+    octx.save(); octx.globalAlpha = alpha == null ? 1 : alpha;
+    octx.strokeStyle = color; octx.lineWidth = width; octx.setLineDash(dash || []); octx.lineCap = 'round';
+    octx.beginPath(); octx.moveTo(a.x, a.y); octx.lineTo(b.x, b.y); octx.stroke(); octx.restore();
+  }
+  function arrow(A, B, color, alpha, now, animate) {
+    const a = ws(A), b = ws(B), m = lerp(a, b, 0.5), n = perp(unit(sub(b, a)));
+    const bulge = Math.min(60, dist(a, b) * 0.22), c = add(m, mul(n, bulge));
+    octx.save(); octx.globalAlpha = alpha; octx.strokeStyle = color; octx.fillStyle = color; octx.lineWidth = 2.5; octx.lineCap = 'round';
+    octx.setLineDash([8, 7]); if (animate && !reduced()) octx.lineDashOffset = -(now / 40) % 15;
+    octx.beginPath(); octx.moveTo(a.x, a.y); octx.quadraticCurveTo(c.x, c.y, b.x, b.y); octx.stroke();
+    octx.setLineDash([]);
+    const dirv = unit(sub(b, c)), side = perp(dirv);
+    octx.beginPath(); octx.moveTo(b.x, b.y); const back = sub(b, mul(dirv, 11));
+    octx.lineTo(back.x + side.x * 6, back.y + side.y * 6); octx.lineTo(back.x - side.x * 6, back.y - side.y * 6); octx.closePath(); octx.fill();
+    octx.beginPath(); octx.arc(b.x, b.y, 4, 0, Math.PI * 2); octx.globalAlpha = alpha * 0.5; octx.fill();
+    octx.restore();
+  }
+  function drawOverlay(now) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    octx.clearRect(0, 0, W, H);
+    if (app.tab === 'shape') { drawShapeMarks(); return; }
+    if (!view) return;
+    const accent = cssVar(app.mode === 'crease' ? '--crease' : '--fold'), ink = cssVar('--ink'), foldC = cssVar('--fold'), creaseC = cssVar('--crease');
+    // ghost of the previous fold
+    if (app.ghost && !app.drag) {
+      const k = reduced() ? 1 : clamp((now - app.ghost.t0) / 700, 0, 1);
+      for (const [a, b] of app.ghost.segs) seg(ws(a), ws(b), foldC, 2, [3, 5], 0.55 * k);
+    }
+    if (app.selCrease) {
+      const a = ws(app.selCrease.a), b = ws(app.selCrease.b);
+      seg(a, b, creaseC, 9, null, 0.22); seg(a, b, creaseC, 2.5, null, 1);
+    }
+    if (app.flash) {
+      const k = clamp((now - app.flash.t0) / 400, 0, 1), ch = E.context(app.state) && chordOf(app.flash.line);
+      if (ch) seg(ws(ch[0]), ws(ch[1]), foldC, 10 * (1 - k) + 2, null, 0.6 * (1 - k));
+    }
+    // guide hint: the exact handle, line and an animated arrow
+    const d = app.drag;
+    if (guideTarget && !d && !app.busy) {
+      const { h, c } = guideTarget;
+      if (c.chord) seg(ws(extend(c.chord[0], c.chord[1], 6)), ws(extend(c.chord[1], c.chord[0], 6)), foldC, 3, [9, 6], 0.85);
+      arrow(c.A, c.B, foldC, 0.95, now, true);
+      const p = ws(h.pos), k = reduced() ? 0.5 : (now / 1100) % 1;
+      octx.save(); octx.strokeStyle = foldC; octx.lineWidth = 2.5; octx.globalAlpha = 1 - k;
+      octx.beginPath(); octx.arc(p.x, p.y, 10 + 16 * k, 0, Math.PI * 2); octx.stroke(); octx.restore();
+    }
+    // candidate lines for the active handle
+    const h = d ? d.h : app.hover;
+    const cands = d ? d.cands : h ? getCands(h) : [];
+    if (cands.length && (h || d)) {
+      const rects = [];
+      if (h) rects.push({ x: ws(h.pos).x - 12, y: ws(h.pos).y - 12, w: 24, h: 24 });
+      cands.forEach((c, i) => {
+        const active = d ? i === d.cur : i === app.candSel && app.focusIdx >= 0;
+        const ch = c.chord || [c.A, c.B];
+        const a = ws(extend(ch[0], ch[1], 7)), b = ws(extend(ch[1], ch[0], 7));
+        const col = c.ok ? accent : cssVar('--ink-soft');
+        if (d && d.cur >= 0 && !active) { seg(a, b, col, 1.5, [5, 6], 0.25); return; }
+        seg(a, b, col, active ? 3 : 2, c.ok ? [8, 6] : [2, 5], active ? 1 : 0.7);
+        if (active) arrow(c.A, c.B, col, 0.9, now, false);
+        if (d && d.cur >= 0) return;
+        // label: along the line near the corner's landing path
+        const foot = add(c.line.P, mul(perp(c.line.n), dot(sub(c.A, c.line.P), perp(c.line.n))));
+        let lp = ws(foot); const dirS = unit(sub(b, a));
+        let r = null;
+        for (let k = 0; k < 6; k++) {
+          const txt = c.ok ? c.label : `${c.label} (no folds left)`;
+          octx.font = '600 12.5px "Bricolage Grotesque", system-ui, sans-serif';
+          const w = octx.measureText(txt).width + 16, hh = 23.5;
+          const tryR = { x: lp.x - w / 2, y: lp.y - hh / 2, w, h: hh };
+          if (!rects.some(o => hit(o, tryR)) && tryR.x > 4 && tryR.y > 4 && tryR.x + w < W - 4 && tryR.y + hh < H - 4) { r = tryR; break; }
+          lp = add(lp, mul(dirS, (k % 2 ? -1 : 1) * (k + 1) * 26));
+        }
+        if (!r) return;
+        rects.push(pill(lp.x, lp.y, c.ok ? c.label : `${c.label} (no folds left)`, { stroke: active ? col : null, color: c.ok ? ink : cssVar('--ink-soft') }));
+      });
+    }
+    // handles: always-visible glowing dots
+    const shake = app.shake ? Math.sin(now / 22) * 4 * (1 - clamp((now - app.shake.t0) / 500, 0, 1)) : 0;
+    for (const H2 of handles()) {
+      if ((d && d.moved) || app.busy) break; // the paper is moving: handles would float in the wrong place
+      const p = ws(H2.pos), isH = H2 === h, isF = app.focusIdx >= 0 && handles()[app.focusIdx] === H2;
+      const x = p.x + (isH ? shake : 0), y = p.y;
+      octx.save();
+      octx.shadowColor = accent; octx.shadowBlur = isH ? 16 : 9;
+      octx.fillStyle = H2.kind === 'corner' ? accent : creaseC;
+      octx.beginPath(); octx.arc(x, y, isH ? 7.5 : 5.2, 0, Math.PI * 2); octx.fill();
+      octx.restore();
+      octx.strokeStyle = '#fff'; octx.lineWidth = 2; octx.beginPath(); octx.arc(x, y, isH ? 7.5 : 5.2, 0, Math.PI * 2); octx.stroke();
+      if (isF && document.activeElement === ov) {
+        octx.save(); octx.strokeStyle = cssVar('--focus'); octx.lineWidth = 2.5; octx.setLineDash([4, 3]);
+        octx.beginPath(); octx.arc(x, y, 14, 0, Math.PI * 2); octx.stroke(); octx.restore();
+      }
+      if (isH && !d) pill(x, y - 22, H2.label, { size: 12 });
+    }
+    // pulses on new crease ends
+    app.pulses = app.pulses.filter(pu => now - pu.t0 < 3200);
+    for (const pu of app.pulses) {
+      const p = ws(pu.pos), k = reduced() ? 0.4 : ((now - pu.t0) / 1000) % 1;
+      octx.save(); octx.strokeStyle = creaseC; octx.lineWidth = 2.5; octx.globalAlpha = (1 - k) * 0.9;
+      octx.beginPath(); octx.arc(p.x, p.y, 7 + 18 * k, 0, Math.PI * 2); octx.stroke(); octx.restore();
+    }
+  }
+  const extend = (a, b, mm) => add(a, mul(unit(sub(a, b)), mm));
+  function chordOf(line) {
+    const ctx = view.ctx; const t = perp(line.n); let lo = Infinity, hi = -Infinity;
+    for (const P of ctx.polys) { const ch = E.vec.lineChord(P.poly, line.P, line.n); if (ch) for (const p of ch) { const k = dot(sub(p, line.P), t); lo = Math.min(lo, k); hi = Math.max(hi, k); } }
+    return lo > hi ? null : [add(line.P, mul(t, lo)), add(line.P, mul(t, hi))];
+  }
+
+  // ------------------------------------------------------------ toolbar
+  function setMode(m) {
+    app.mode = m;
+    document.querySelectorAll('.seg [data-mode]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.mode === m)));
+    computeGuideTarget();
+    if (!app.drag) idleStatus(true);
+    requestDraw();
+  }
+  document.querySelectorAll('.seg [data-mode]').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  document.querySelector('.seg[role="radiogroup"]').addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); setMode(app.mode === 'fold' ? 'crease' : 'fold'); document.querySelector(`.seg [data-mode="${app.mode}"]`).focus(); }
+  });
+  function updateToolbar() {
+    $('#btn-undo').disabled = !app.history.length;
+    const left = app.state.budget - app.state.foldsUsed;
+    const pips = $('#pips'); pips.innerHTML = '';
+    for (let i = 0; i < app.state.budget; i++) { const p = document.createElement('i'); if (i >= left) p.className = 'used'; pips.appendChild(p); }
+    $('#budget-text').textContent = `${left} fold${left === 1 ? '' : 's'} left`;
+    renderLook();
+  }
+  $('#btn-undo').addEventListener('click', undo);
+  $('#btn-flip').addEventListener('click', flipOver);
+  $('#btn-top').addEventListener('click', setTopView);
+  $('#btn-reset').addEventListener('click', () => resetSheet(false));
+  $('#btn-theme').addEventListener('click', () => {
+    const dark = cssVar('--mat').toLowerCase() === '#1e2a24';
+    document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+    applyTheme();
+  });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+
+  // guide controls
+  $('#btn-guide').addEventListener('click', () => {
+    if (app.guide.on) { app.guide.on = false; }
+    else {
+      app.guide.on = true; app.guide.step = 0; app.guide.nudge = '';
+      if (app.state.foldsUsed || app.state.hinges.length) resetSheet(true);
+      setMode(GUIDE[0].mode);
+    }
+    renderGuide(); computeGuideTarget(); idleStatus(true); requestDraw();
+  });
+  $('#guide-skip').addEventListener('click', () => { app.guide.on = false; setMode('fold'); renderGuide(); computeGuideTarget(); idleStatus(true); requestDraw(); });
+  $('#guide-next').addEventListener('click', () => {
+    if (!GUIDE[app.guide.step]) { app.guide.step = 0; resetSheet(true); setMode(GUIDE[0].mode); renderGuide(); return; }
+    setTab('shape');
+  });
+  $('#guide-back').addEventListener('click', undo);
+  $('#guide-back').textContent = 'Undo';
+
+  // ------------------------------------------------------------ tabs & shaping
+  $('#tab-fold').addEventListener('click', () => setTab('fold'));
+  $('#tab-shape').addEventListener('click', () => setTab('shape'));
+  $('#btn-back-fold').addEventListener('click', () => setTab('fold'));
+  document.querySelector('.tabs').addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); setTab(app.tab === 'fold' ? 'shape' : 'fold'); $(`#tab-${app.tab}`).focus(); }
+  });
+  function setTab(t) {
+    if (app.drag || app.busy) return;
+    app.tab = t;
+    document.body.classList.toggle('tab-shape', t === 'shape');
+    document.body.classList.toggle('tab-fold', t === 'fold');
+    $('#tab-fold').setAttribute('aria-selected', String(t === 'fold'));
+    $('#tab-shape').setAttribute('aria-selected', String(t === 'shape'));
+    $('#shape-panel').hidden = t !== 'shape';
+    if (t === 'shape') {
+      $('#look').hidden = true;
+      enterShape();
+      tweenCam(58 * DEG, 0.75);
+    } else {
+      markers.visible = false;
+      app.shape.bounds = null;
+      setView(app.state); fitCamera(); tweenCam(0, 0);
+      $('#look').hidden = !app.look;
+      computeGuideTarget(); idleStatus(true);
+    }
+    renderGuide();
+  }
+  function enterShape() {
+    const sh = app.shape;
+    const an0 = E.analyzeShape(app.state);
+    if (sh.spine == null || !an0.folded.some(g => g.id === sh.spine)) sh.spine = an0.spine ? an0.spine.gid : null;
+    const an = sh.spine != null ? E.analyzeShape(app.state, { spine: sh.spine }) : an0;
+    sh.an = an;
+    // spine choices
+    const sel = $('#spine-select'); sel.innerHTML = '';
+    an0.folded.forEach((g, i) => {
+      const o = document.createElement('option'); o.value = g.id;
+      o.textContent = `${g.label || `Fold ${i + 1}`}${an0.spine && g.id === an0.spine.gid ? ' (main center fold)' : ''}`;
+      if (g.id === sh.spine) o.selected = true;
+      sel.appendChild(o);
+    });
+    const has = !!an.spine;
+    $('#shape-intro').textContent = has ? 'Set how far the wings open. The 3D view updates as you go.' : 'Fold the plane in half first. Shaping opens the folded plane around its main center fold.';
+    $('#shape-body').hidden = !has;
+    // tips: which way is "up" for each one
+    sh.upSign = {};
+    for (const t of an.tips) {
+      const y = sgn => { const s2 = E.applyShape(app.state, an, { dihedralA: sh.dA, dihedralB: sh.perSide ? sh.dB : sh.dA, keel: sh.keel, tips: { [t.key]: 60 * sgn } }); const g = E.getPanels3D(s2, { analysis: an }); let m = -Infinity; g.panels.forEach(p => { if (t.hinges.some(hid => { const hh = s2.hinges.find(x => x.id === hid); return hh && (hh.a === p.id || hh.b === p.id); })) m = Math.max(m, p.centroid.y); }); return m; };
+      sh.upSign[t.key] = y(1) >= y(-1) ? 1 : -1;
+    }
+    // structural balance: with both wings opened the same amount, is the paper split evenly?
+    sh.areaWarn = false;
+    if (an.spine) {
+      const sym = E.applyShape(app.state, an, { dihedralA: 10, dihedralB: 10, keel: sh.keel });
+      const T = E.computeTransforms(sym), ff = E.flightFrame(sym, T, an);
+      const spineX = E.mat.mapp(ff.M, ff.nose).x;
+      let aL = 0, aR = 0;
+      for (const pn of sym.panels) { const c = E.mat.mapp(E.mat.mmul(ff.M, T.get(pn.id)), E.vec.centroid(pn.poly)); const a = Math.abs(E.vec.polyArea(pn.poly)); if (c.x < spineX - 1) aL += a; else if (c.x > spineX + 1) aR += a; }
+      sh.areaWarn = aL + aR > 0 && Math.abs(aL - aR) / (aL + aR) > 0.12;
+    }
+    updateShape(true);
+  }
+  function sideName(an, side, flatT) {
+    // left or right in the flight frame
+    const s2 = app.shape.shaped; if (!s2) return side;
+    const g = an.wings[side]; if (!g) return side;
+    const T = E.computeTransforms(s2), ff = E.flightFrame(s2, T, an);
+    const h = s2.hinges.find(x => x.group === g.gid && Math.abs(x.angle) > 1e-6);
+    const p = E.mat.mapp(E.mat.mmul(ff.M, T.get(h.a)), h.p);
+    return p.x < 0 ? 'left' : 'right';
+  }
+  function updateShape(refit) {
+    const sh = app.shape, an = sh.an;
+    if (!an || !an.spine) { markers.visible = false; setView(app.state); app.shape.shaped = null; fitShapeBounds(app.state, null); if (refit) fitCamera(); setStatus('Nothing to open yet. Fold the plane in half first.'); return; }
+    const tips = {};
+    for (const t of an.tips) if (sh.tips[t.key]) tips[t.key] = sh.tips[t.key] * (sh.tipDir[t.key] === 'down' ? -1 : 1) * (sh.upSign[t.key] || 1);
+    // A/B sides map to left/right after the first shaping pass
+    const map = sh.sideMap || { A: 'left', B: 'right' };
+    const dL = sh.dA, dR = sh.perSide ? sh.dB : sh.dA;
+    const p = { dihedralA: map.A === 'left' ? dL : dR, dihedralB: map.B === 'left' ? dL : dR, keel: sh.keel, tips };
+    let s2 = E.applyShape(app.state, an, p);
+    sh.shaped = s2;
+    if (!sh.sideMap) {
+      sh.sideMap = { A: sideName(an, 'A'), B: sideName(an, 'B') };
+      if (sh.sideMap.A === sh.sideMap.B) sh.sideMap.B = sh.sideMap.A === 'left' ? 'right' : 'left';
+      if (sh.sideMap.A !== 'left') { p.dihedralA = dR; p.dihedralB = dL; s2 = E.applyShape(app.state, an, p); sh.shaped = s2; }
+    }
+    const T = E.computeTransforms(s2), ff = E.flightFrame(s2, T, an);
+    const S = [1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0]; // flight (x right, y up, z back) → scene (x, -z, y)
+    let pre = E.mat.mmul(S, ff.M);
+    let minZ = Infinity, x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const pn of s2.panels) for (const q of pn.poly) { const w = E.mat.mapp(E.mat.mmul(pre, T.get(pn.id)), q); minZ = Math.min(minZ, w.z); x0 = Math.min(x0, w.x); x1 = Math.max(x1, w.x); y0 = Math.min(y0, w.y); y1 = Math.max(y1, w.y); }
+    const hover = -minZ + 45;
+    pre = E.mat.mmul([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, hover], pre);
+    sh.hover = hover; sh.pre = pre; sh.T = T;
+    sh.bounds = { w: Math.max(x1 - x0, 160), h: Math.max(y1 - y0, 200), cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
+    buildModel(s2);
+    placeModel(s2, T, view.offsets, pre);
+    // centre of mass marker (flight-frame origin)
+    markers.visible = true;
+    const com = E.mat.mapp(pre, { x: 0, y: 0, z: 0 });
+    comMarker.position.set(com.x, com.y, com.z);
+    comDrop.position.set(com.x, com.y, com.z); comDrop.scale.set(1, 1, com.z - 0.5); comDrop.computeLineDistances();
+    // stats
+    const g = E.getPanels3D(s2, { analysis: an });
+    sh.geom = g;
+    let tipX = [null, null];
+    g.panels.forEach(pn => pn.triangles.flat().forEach(q => { if (!tipX[0] || q.x < tipX[0].x) tipX[0] = q; if (!tipX[1] || q.x > tipX[1].x) tipX[1] = q; }));
+    sh.tipPts = tipX.map(q => E.mat.mapp([1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, hover], q));
+    const noseZ = ff.nose ? E.mat.mapp(ff.M, ff.nose).z : 0;
+    $('#stat-span').textContent = `${Math.round(g.span)} mm`;
+    $('#stat-mass').textContent = `${g.massGrams.toFixed(2)} g`;
+    $('#stat-com').textContent = `${Math.round(-noseZ)} mm`;
+    $('#stat-com').parentElement.title = 'Distance from the nose to the center of mass';
+    $('#stat-com').nextElementSibling.textContent = 'Nose to balance';
+    // labels & sliders
+    $('#dihedral-out').textContent = `${sh.dA}°`;
+    $('#dihedral-l-out').textContent = `${sh.dA}°`; $('#dihedral-r-out').textContent = `${sh.dB}°`;
+    $('#per-side-body').hidden = !sh.perSide;
+    $('#dihedral').disabled = sh.perSide;
+    const tipSel = $('#tip-select');
+    if (refit || tipSel.options.length !== an.tips.length) {
+      tipSel.innerHTML = '';
+      an.tips.forEach(t => { const o = document.createElement('option'); o.value = t.key; o.textContent = `${sh.sideMap[t.side] === 'left' ? 'Left' : 'Right'} wing-tip ${t.type === 'crease' ? 'crease' : 'fold'}`; tipSel.appendChild(o); });
+      if (!an.tips.some(t => t.key === sh.tipSel)) sh.tipSel = an.tips[0] ? an.tips[0].key : null;
+      if (sh.tipSel) tipSel.value = sh.tipSel;
+    }
+    const hasTips = an.tips.length > 0;
+    document.querySelectorAll('#tips-field > :not(#tip-hint):not(label[for="tip-select"])').forEach(el => { el.hidden = !hasTips; });
+    $('label[for="tip-angle"]').hidden = !hasTips;
+    $('#tip-hint').textContent = hasTips ? 'Bends a crease near the wing tip into a winglet.' : 'No wing-tip creases yet. Crease near a wing tip (parallel to the spine) before folding the wings, then set it here.';
+    $('#tip-angle').value = sh.tips[sh.tipSel] || 0;
+    $('#tip-out').textContent = `${sh.tips[sh.tipSel] || 0}°`;
+    $('#tip-up').setAttribute('aria-pressed', String(sh.tipDir[sh.tipSel] !== 'down'));
+    $('#tip-down').setAttribute('aria-pressed', String(sh.tipDir[sh.tipSel] === 'down'));
+    // asymmetry warning
+    const warns = [];
+    if (sh.perSide && Math.abs(sh.dA - sh.dB) > 8) warns.push(`The wings differ by ${Math.abs(sh.dA - sh.dB)}°. The plane will roll toward the ${sh.dA < sh.dB ? 'left' : 'right'}.`);
+    const L = an.tips.filter(t => sh.sideMap[t.side] === 'left').reduce((m, t) => Math.max(m, sh.tips[t.key] || 0), 0);
+    const R = an.tips.filter(t => sh.sideMap[t.side] === 'right').reduce((m, t) => Math.max(m, sh.tips[t.key] || 0), 0);
+    if (Math.abs(L - R) > 15) warns.push('The wing tips are bent differently, so the plane will turn.');
+    if (sh.areaWarn) warns.push('One side has much more paper than the other.');
+    $('#shape-warn').hidden = !warns.length; $('#shape-warn').textContent = warns.join(' ');
+    setStatus(warns.length ? 'Very asymmetric shape: see the warning.' : `Span ${Math.round(g.span)} mm, ${g.massGrams.toFixed(2)} g. Drag to turn the view.`, warns.length ? 'error' : null);
+    if (refit) fitCamera();
+    requestDraw();
+  }
+  function fitShapeBounds() { app.shape.bounds = { w: 220, h: 300, cx: 0, cy: 0 }; app.shape.hover = LIFT; }
+  function drawShapeMarks() {
+    const sh = app.shape;
+    if (!sh.shaped || !sh.tipPts) return;
+    const a = toScreen(sh.tipPts[0].x, sh.tipPts[0].y, sh.tipPts[0].z), b = toScreen(sh.tipPts[1].x, sh.tipPts[1].y, sh.tipPts[1].z);
+    seg(a, b, cssVar('--ink'), 1.5, [4, 4], 0.7);
+    for (const p of [a, b]) { octx.fillStyle = cssVar('--ink'); octx.beginPath(); octx.arc(p.x, p.y, 3, 0, Math.PI * 2); octx.fill(); }
+    const m = lerp(a, b, 0.5);
+    pill(m.x, m.y - 16, `Span ${Math.round(sh.geom.span)} mm`, {});
+    const c = toScreen(comMarker.position.x, comMarker.position.y, comMarker.position.z);
+    pill(c.x + 58, c.y, 'Center of mass', { stroke: cssVar('--fold') });
+  }
+  const bindRange = (id, fn) => $(id).addEventListener('input', e => { fn(+e.target.value); app.shape.touched = true; updateShape(false); guideShapeDone(); });
+  bindRange('#dihedral', x => { app.shape.dA = x; if (!app.shape.perSide) app.shape.dB = x; });
+  bindRange('#dihedral-l', x => { app.shape.dA = x; });
+  bindRange('#dihedral-r', x => { app.shape.dB = x; });
+  bindRange('#tip-angle', x => { if (app.shape.tipSel) app.shape.tips[app.shape.tipSel] = x; });
+  $('#per-side').addEventListener('change', e => { app.shape.perSide = e.target.checked; if (!e.target.checked) app.shape.dB = app.shape.dA; $('#dihedral-l').value = app.shape.dA; $('#dihedral-r').value = app.shape.dB; updateShape(false); });
+  $('#tip-select').addEventListener('change', e => { app.shape.tipSel = e.target.value; updateShape(false); });
+  $('#tip-up').addEventListener('click', () => { app.shape.tipDir[app.shape.tipSel] = 'up'; updateShape(false); });
+  $('#tip-down').addEventListener('click', () => { app.shape.tipDir[app.shape.tipSel] = 'down'; updateShape(false); });
+  $('#spine-select').addEventListener('change', e => { app.shape.spine = +e.target.value; app.shape.sideMap = null; enterShape(); });
+  $('#copy-geom').addEventListener('click', async () => {
+    const g = window.paperFlight.getPanels3D();
+    const txt = JSON.stringify(g);
+    try { await navigator.clipboard.writeText(txt); setStatus(`Copied ${g.panels.length} panels (${Math.round(txt.length / 1024)} KB) as JSON.`, null, null, 2600); }
+    catch (err) { setStatus('Copy failed. Use paperFlight.getPanels3D() in the console instead.', 'error', null, 3000); }
+  });
+  function guideShapeDone() {
+    if (!app.guide.on) return;
+    const st = GUIDE[app.guide.step];
+    if (st && st.shape) { app.guide.step++; renderGuide(); }
+  }
+
+  // ------------------------------------------------------------ SVG helpers: show me + look
+  const NS = 'http://www.w3.org/2000/svg';
+  const fmt = n => (Math.round(n * 10) / 10).toString();
+  const pathOf = pts => 'M' + pts.map(p => `${fmt(p.x)},${fmt(-p.y)}`).join('L') + 'Z';
+  function svgFlat(s, step) {
+    const T = E.computeTransforms(s), wp = E.worldPolys(s, T), sg = E.flatSigns(s, T);
+    let out = `<svg viewBox="-122 -162 244 324" xmlns="${NS}" role="img" aria-label="${step ? step.label : 'Folded paper'}">`;
+    for (const id of s.order) {
+      out += `<path d="${pathOf(wp.get(id))}" style="fill:var(${sg.get(id) > 0 ? '--paper' : '--paper-back'});stroke:var(--ink);stroke-opacity:.45;stroke-width:.7;stroke-linejoin:round"/>`;
+      for (const h of s.hinges) if (h.a === id && Math.abs(h.angle) < 1e-6) {
+        const a = E.mat.mapp(T.get(h.a), h.p), b = E.mat.mapp(T.get(h.a), h.q);
+        out += `<line x1="${fmt(a.x)}" y1="${fmt(-a.y)}" x2="${fmt(b.x)}" y2="${fmt(-b.y)}" style="stroke:var(--crease);stroke-width:1.1"/>`;
+      }
+    }
+    if (step) {
+      const A = v(step.A[0], step.A[1]), B = v(step.B[0], step.B[1]), line = E.lineFromPoints(A, B);
+      const ctx = E.context(s); const tt = perp(line.n); let lo = Infinity, hi = -Infinity;
+      for (const P of ctx.polys) { const ch = E.vec.lineChord(P.poly, line.P, line.n); if (ch) for (const p of ch) { const k = dot(sub(p, line.P), tt); lo = Math.min(lo, k); hi = Math.max(hi, k); } }
+      const p0 = add(line.P, mul(tt, lo - 6)), p1 = add(line.P, mul(tt, hi + 6));
+      const col = step.mode === 'crease' ? '--crease' : '--fold';
+      out += `<line x1="${fmt(p0.x)}" y1="${fmt(-p0.y)}" x2="${fmt(p1.x)}" y2="${fmt(-p1.y)}" style="stroke:var(${col});stroke-width:2;stroke-dasharray:6 4"/>`;
+      const m = lerp(A, B, 0.5), nn = perp(unit(sub(B, A))), c = add(m, mul(nn, Math.min(40, dist(A, B) * 0.25) * (step.dir < 0 ? -1 : 1)));
+      const dv = unit(sub(B, c)), sd = perp(dv), bk = sub(B, mul(dv, 9));
+      out += `<path d="M${fmt(A.x)},${fmt(-A.y)} Q${fmt(c.x)},${fmt(-c.y)} ${fmt(B.x)},${fmt(-B.y)}" style="fill:none;stroke:var(${col});stroke-width:2.2;${step.dir < 0 ? 'stroke-dasharray:3 3' : ''}"/>`;
+      out += `<path d="M${fmt(B.x)},${fmt(-B.y)}L${fmt(bk.x + sd.x * 5)},${fmt(-(bk.y + sd.y * 5))}L${fmt(bk.x - sd.x * 5)},${fmt(-(bk.y - sd.y * 5))}Z" style="fill:var(${col})"/>`;
+      out += `<circle cx="${fmt(A.x)}" cy="${fmt(-A.y)}" r="4.5" style="fill:var(${col});stroke:#fff;stroke-width:1.5"/>`;
+    }
+    return out + '</svg>';
+  }
+  // Top-down silhouette of the opened plane with nose, wings and tail labelled
+  function svgPlan(sFlat, dihedral, compact) {
+    const an = E.analyzeShape(sFlat);
+    if (!an.spine) return null;
+    const s2 = E.applyShape(sFlat, an, { dihedralA: dihedral, dihedralB: dihedral });
+    const g = E.getPanels3D(s2, { analysis: an });
+    const pts = []; g.panels.forEach(p => p.triangles.forEach(t => t.forEach(q => pts.push(q))));
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    pts.forEach(q => { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); z0 = Math.min(z0, q.z); z1 = Math.max(z1, q.z); });
+    const padX = 95, padZ = 30, vb = [x0 - padX, z0 - padZ, x1 - x0 + 2 * padX, z1 - z0 + 2 * padZ];
+    let out = `<svg viewBox="${vb.map(fmt).join(' ')}" xmlns="${NS}" role="img" aria-label="Plane seen from above, nose at the top">`;
+    const tris = [];
+    g.panels.forEach(p => p.triangles.forEach(t => tris.push(t)));
+    out += `<rect x="${fmt(vb[0])}" y="${fmt(vb[1])}" width="${fmt(vb[2])}" height="${fmt(vb[3])}" rx="10" style="fill:var(--mat)"/>`;
+    for (const t of tris) out += `<path d="M${t.map(q => `${fmt(q.x)},${fmt(q.z)}`).join('L')}Z" style="fill:var(--paper);stroke:var(--paper);stroke-width:.8;stroke-linejoin:round"/>`;
+    // panel outlines
+    g.panels.forEach(p => {
+      const ring = []; p.triangles.forEach((t, i) => { if (!i) ring.push(t[0], t[1]); ring.push(t[2]); });
+      out += `<path d="M${ring.map(q => `${fmt(q.x)},${fmt(q.z)}`).join('L')}Z" style="fill:none;stroke:var(--ink);stroke-opacity:.22;stroke-width:.6;stroke-linejoin:round"/>`;
+    });
+    // outline hint: spine
+    const nose = pts.reduce((a, b) => (b.z < a.z ? b : a));
+    const tail = pts.filter(q => Math.abs(q.x) < 4).reduce((a, b) => (b.z > a.z ? b : a), nose);
+    out += `<line x1="${fmt(nose.x)}" y1="${fmt(nose.z)}" x2="${fmt(tail.x)}" y2="${fmt(tail.z)}" style="stroke:var(--ink);stroke-opacity:.5;stroke-width:1"/>`;
+    // wings: biggest panels (in plan view) either side of the spine
+    const planArea = p => { let a = 0; p.triangles.forEach(t => { a += Math.abs((t[1].x - t[0].x) * (t[2].z - t[0].z) - (t[2].x - t[0].x) * (t[1].z - t[0].z)) / 2; }); return a; };
+    const best = sgn => g.panels.filter(p => Math.sign(p.centroid.x) === sgn && Math.abs(p.centroid.x) > 3).sort((a, b) => planArea(b) - planArea(a))[0];
+    const fs = compact ? 15 : 13;
+    const label = (x, y, txt, anchor, tx, ty) => `<g><circle cx="${fmt(x)}" cy="${fmt(y)}" r="3" style="fill:var(--fold)"/><text x="${fmt(tx)}" y="${fmt(ty)}" text-anchor="${anchor}" style="font:600 ${fs}px 'Bricolage Grotesque',system-ui,sans-serif;fill:var(--ink)">${txt}</text></g>`;
+    out += label(nose.x, nose.z, 'Nose', 'middle', nose.x, nose.z - 8);
+    out += label(tail.x, tail.z, 'Tail', 'middle', tail.x, tail.z + fs + 4);
+    for (const [sgn, name] of [[-1, 'Left wing'], [1, 'Right wing']]) {
+      const w = best(sgn); if (!w) continue;
+      const tip = sgn < 0 ? x0 : x1;
+      out += label(w.centroid.x, w.centroid.z, name, sgn < 0 ? 'end' : 'start', tip + sgn * 6, w.centroid.z - 10);
+      out += `<line x1="${fmt(w.centroid.x)}" y1="${fmt(w.centroid.z)}" x2="${fmt(tip + sgn * 4)}" y2="${fmt(w.centroid.z - 14)}" style="stroke:var(--fold);stroke-width:1"/>`;
+    }
+    return out + '</svg>';
+  }
+  let dartFinal = null;
+  function renderLook() {
+    if (!app.look) return;
+    if (!dartFinal) dartFinal = E.runScript(E.TEMPLATES.dart.steps).state;
+    $('#look-goal').innerHTML = svgPlan(dartFinal, 8, true);
+    const mine = svgPlan(app.state, app.shape.dA || 8, true);
+    $('#look-yours').innerHTML = mine || `<svg viewBox="0 0 120 120" xmlns="${NS}"><text x="60" y="56" text-anchor="middle" style="font:500 11px 'Bricolage Grotesque',system-ui,sans-serif;fill:var(--ink-soft)">Fold it in half</text><text x="60" y="72" text-anchor="middle" style="font:500 11px 'Bricolage Grotesque',system-ui,sans-serif;fill:var(--ink-soft)">to see your plane</text></svg>`;
+    $('#look-yours-cap').textContent = mine ? 'Yours, opened' : 'Yours';
+  }
+  $('#btn-look').addEventListener('click', () => {
+    app.look = !app.look;
+    $('#btn-look').setAttribute('aria-pressed', String(app.look));
+    $('#look').hidden = !app.look || app.tab === 'shape';
+    renderLook();
+    fitCamera();
+  });
+
+  let showKey = 'dart';
+  const showCache = {};
+  function renderShowMe() {
+    if ($('#showme').hidden) return;
+    const tabs = $('#showme-tabs'); tabs.innerHTML = '';
+    for (const k of Object.keys(E.TEMPLATES)) {
+      const b = document.createElement('button'); b.role = 'tab'; b.textContent = E.TEMPLATES[k].name;
+      b.setAttribute('aria-selected', String(k === showKey)); b.setAttribute('aria-checked', String(k === showKey)); b.dataset.mode = 'fold';
+      b.onclick = () => { showKey = k; renderShowMe(); };
+      tabs.appendChild(b);
+    }
+    const T = E.TEMPLATES[showKey];
+    if (!showCache[showKey]) showCache[showKey] = E.runScript(T.steps);
+    const run = showCache[showKey];
+    $('#showme-title').textContent = `Show me: ${T.name.toLowerCase()}`;
+    $('#showme-text').textContent = { dart: 'The plane the guide builds: a sharp nose and swept wings. Fast and straight.', glider: 'Blunt nose and wide wings, close to the spine. Slower, floats longer.', stunt: 'A dart with wing tips bent up into winglets for stability. Set the winglet angle in the Shape tab.' }[showKey];
+    const box = $('#showme-steps'); box.innerHTML = '';
+    T.steps.forEach((st, i) => {
+      const f = document.createElement('figure');
+      f.innerHTML = svgFlat(run.states[i], st) + `<figcaption><b>${i + 1}</b>${st.label}${st.mode === 'crease' ? ' (crease)' : st.dir < 0 ? ' (fold behind)' : ''}</figcaption>`;
+      box.appendChild(f);
+    });
+    const f = document.createElement('figure');
+    f.innerHTML = (svgPlan(run.state, T.shape.dihedral) || '') + `<figcaption><b>✓</b>Opened, seen from above</figcaption>`;
+    box.appendChild(f);
+  }
+  function openShowMe() { $('#showme').hidden = false; renderShowMe(); $('#showme-close').focus(); }
+  function closeShowMe() { $('#showme').hidden = true; $('#btn-showme').focus(); }
+  $('#btn-showme').addEventListener('click', openShowMe);
+  $('#showme-close').addEventListener('click', closeShowMe);
+  $('#showme').addEventListener('click', e => { if (e.target.id === 'showme') closeShowMe(); });
+  $('#showme-load').addEventListener('click', () => {
+    const T = E.TEMPLATES[showKey];
+    const run = showCache[showKey] || E.runScript(T.steps);
+    closeShowMe();
+    if (app.tab !== 'fold') setTab('fold');
+    app.guide.on = false; renderGuide();
+    app.shape.sideMap = null; app.shape.spine = null; app.shape.tips = {};
+    commit(run.state, {});
+    if (T.shape.tips) {
+      const an = E.analyzeShape(run.state);
+      an.tips.forEach(t => { app.shape.tips[t.key] = T.shape.tips; });
+    }
+    app.shape.dA = app.shape.dB = T.shape.dihedral;
+    $('#dihedral').value = T.shape.dihedral;
+    setStatus(`${T.name} loaded. Open the Shape tab to set its wings.`, null, [{ label: 'Shape it', run: () => setTab('shape') }], 5000);
+  });
+
+  // ------------------------------------------------------------ sizing & start
+  function resize() {
+    const r = stage.getBoundingClientRect();
+    W = Math.max(1, r.width); H = Math.max(1, r.height);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    renderer.setSize(W, H, false);
+    ov.width = Math.round(W * dpr); ov.height = Math.round(H * dpr);
+    camera.aspect = W / H; camera.updateProjectionMatrix();
+    if (view) fitCamera(true);
+    requestDraw();
+  }
+  new ResizeObserver(resize).observe(stage);
+
+  window.paperFlight = {
+    engine: E,
+    get state() { return app.state; },
+    getPanels3D: () => (app.shape.shaped && app.tab === 'shape') ? E.getPanels3D(app.shape.shaped, { analysis: app.shape.an }) : E.getPanels3D(app.state, { frame: 'world' }),
+    runTests: () => window.PaperTests.run(),
+    _app: app, _debug: { setTab, performCandidate, getCands, handles: () => handles(), ws, setMode, undo, flipOver, matchWing, guideTarget: () => guideTarget, setView, commit }
+  };
+
+  applyTheme();
+  setView(app.state);
+  resize();
+  fitCamera(true);
+  if (app.guide.on) setMode(GUIDE[0].mode);
+  renderGuide();
+  computeGuideTarget();
+  updateToolbar();
+  idleStatus(true);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
